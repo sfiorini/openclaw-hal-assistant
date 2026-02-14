@@ -1,6 +1,8 @@
 {
-  "name": "my-project",
-  "version": "0.1.0",
+  "name": "openclaw-hal-assistant",
+  "version": "1.0.0",
+  "description": "HAL 9000-inspired voice assistant API with STT/TTS and chat endpoints.",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
