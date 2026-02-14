@@ -1,73 +1,115 @@
 import { NextRequest, NextResponse } from "next/server"
+import { ZodError } from "zod"
+
+import { applyCorsHeaders, corsPreflightResponse } from "../../../lib/middleware/cors"
+import { createLogger } from "../../../lib/middleware/logger"
+import { limitRequest } from "../../../lib/middleware/rate-limit"
+import { withApiKeyAuth } from "../../../lib/middleware/auth"
+import { isTimeoutError, withTimeout } from "../../../lib/middleware/timeout"
+import { ttsRequestSchema } from "../../../lib/schemas/tts.schema"
+import { getServerEnvConfig } from "../../../lib/config/env"
+
+const logger = createLogger()
+
+const buildErrorResponse = (request: NextRequest, status: number, body: Record<string, unknown>) =>
+  applyCorsHeaders(
+    NextResponse.json(body, {
+      status,
+    }),
+    request
+  )
+
+export async function OPTIONS(request: NextRequest) {
+  return corsPreflightResponse(request)
+}
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ELEVENLABS_API_KEY
-  const voiceId = process.env.ELEVENLABS_VOICE_ID
+  let env
 
-  if (!apiKey || !voiceId) {
-    return NextResponse.json(
-      { error: "ElevenLabs TTS is not configured" },
-      { status: 500 }
+  try {
+    env = getServerEnvConfig()
+  } catch (error) {
+    return buildErrorResponse(
+      request,
+      500,
+      { error: (error as Error).message }
     )
   }
 
+  const authResponse = await withApiKeyAuth(request, {
+    requiredApiKey: env.OPENCLAW_API_KEY,
+  })
+  if (authResponse) {
+    return buildErrorResponse(request, 401, await authResponse.json())
+  }
+
+  const rateLimitResponse = limitRequest(request, env.OPENCLAW_RATE_LIMIT)
+  if (rateLimitResponse) {
+    return applyCorsHeaders(rateLimitResponse, request)
+  }
+
   try {
-    const { text } = await request.json()
+    const { text } = ttsRequestSchema.parse(await request.json())
 
-    if (!text || typeof text !== "string") {
-      return NextResponse.json(
-        { error: "No text provided" },
-        { status: 400 }
-      )
-    }
-
-    // Call ElevenLabs Text-to-Speech API
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: {
-            stability: 0.75,
-            similarity_boost: 0.85,
-            style: 0.1,
-            use_speaker_boost: true,
+    const response = await withTimeout(
+      (signal) =>
+        fetch(`https://api.elevenlabs.io/v1/text-to-speech/${env.ELEVENLABS_VOICE_ID}`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": env.ELEVENLABS_API_KEY,
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg",
           },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_multilingual_v2",
+            voice_settings: {
+              stability: 0.75,
+              similarity_boost: 0.85,
+              style: 0.1,
+              use_speaker_boost: true,
+            },
+          }),
+          signal,
         }),
-      }
+      20_000
     )
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("ElevenLabs TTS error:", errorText)
-      return NextResponse.json(
-        { error: "Text-to-speech conversion failed" },
-        { status: response.status }
-      )
+      logger.error(`TTS upstream error: ${errorText}`)
+      return buildErrorResponse(request, 502, { error: "Text-to-speech conversion failed" })
     }
 
-    // Return the audio as a binary stream
     const audioBuffer = await response.arrayBuffer()
-
-    return new NextResponse(audioBuffer, {
+    const output = new NextResponse(audioBuffer, {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
         "Content-Length": audioBuffer.byteLength.toString(),
       },
     })
+
+    return applyCorsHeaders(output, request)
   } catch (error) {
-    console.error("TTS route error:", error)
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    )
+    if (isTimeoutError(error)) {
+      logger.error(`TTS request timed out: ${error.message}`)
+      return buildErrorResponse(request, 504, { error: "Text-to-speech conversion timed out" })
+    }
+
+    if (error instanceof ZodError) {
+      return buildErrorResponse(request, 400, {
+        error: "Invalid request",
+        details: error.errors.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      })
+    }
+
+    logger.error(`TTS route error: ${(error as Error).message}`)
+    return buildErrorResponse(request, 500, {
+      error: "Internal server error",
+    })
   }
 }

@@ -1,57 +1,118 @@
 import { NextRequest, NextResponse } from "next/server"
+import { ZodError } from "zod"
+
+import { applyCorsHeaders, corsPreflightResponse } from "../../../lib/middleware/cors"
+import { createLogger } from "../../../lib/middleware/logger"
+import { limitRequest } from "../../../lib/middleware/rate-limit"
+import { withApiKeyAuth } from "../../../lib/middleware/auth"
+import { isTimeoutError, withTimeout } from "../../../lib/middleware/timeout"
+import { sttRequestSchema, sttResponseSchema } from "../../../lib/schemas/stt.schema"
+import { getServerEnvConfig } from "../../../lib/config/env"
+
+const logger = createLogger()
+
+const buildErrorResponse = (request: NextRequest, status: number, body: Record<string, unknown>) =>
+  applyCorsHeaders(
+    NextResponse.json(body, {
+      status,
+    }),
+    request
+  )
+
+export async function OPTIONS(request: NextRequest) {
+  return corsPreflightResponse(request)
+}
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ELEVENLABS_API_KEY
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ELEVENLABS_API_KEY is not configured" },
-      { status: 500 }
+  let env
+
+  try {
+    env = getServerEnvConfig()
+  } catch (error) {
+    return buildErrorResponse(
+      request,
+      500,
+      { error: (error as Error).message }
     )
   }
 
+  const authResponse = await withApiKeyAuth(request, {
+    requiredApiKey: env.OPENCLAW_API_KEY,
+  })
+  if (authResponse) {
+    return buildErrorResponse(request, 401, await authResponse.json())
+  }
+
+  const rateLimitResponse = limitRequest(request, env.OPENCLAW_RATE_LIMIT)
+  if (rateLimitResponse) {
+    return applyCorsHeaders(rateLimitResponse, request)
+  }
+
+  let validatedAudio
   try {
     const formData = await request.formData()
-    const audioFile = formData.get("audio") as File | null
-
-    if (!audioFile) {
-      return NextResponse.json(
-        { error: "No audio file provided" },
-        { status: 400 }
-      )
+    const audio = formData.get("audio")
+    validatedAudio = sttRequestSchema.parse({ audio }).audio
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return buildErrorResponse(request, 400, {
+        error: "Invalid request",
+        details: error.errors.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      })
     }
 
-    // Send to ElevenLabs Speech-to-Text API
-    const elevenLabsForm = new FormData()
-    elevenLabsForm.append("file", audioFile)
-    elevenLabsForm.append("model_id", "scribe_v1")
+    logger.error(`STT request validation error: ${(error as Error).message}`)
+    return buildErrorResponse(request, 400, { error: "Invalid request" })
+  }
 
-    const response = await fetch(
-      "https://api.elevenlabs.io/v1/speech-to-text",
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-        },
-        body: elevenLabsForm,
-      }
+  const elevenLabsForm = new FormData()
+  elevenLabsForm.append("file", validatedAudio)
+  elevenLabsForm.append("model_id", "scribe_v1")
+
+  try {
+    const response = await withTimeout(
+      (signal) =>
+        fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+          method: "POST",
+          headers: {
+            "xi-api-key": env.ELEVENLABS_API_KEY,
+          },
+          body: elevenLabsForm,
+          signal,
+        }),
+      10_000
     )
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("ElevenLabs STT error:", errorText)
-      return NextResponse.json(
-        { error: "Speech-to-text conversion failed" },
-        { status: response.status }
-      )
+      logger.error(`STT upstream error: ${errorText}`)
+      return buildErrorResponse(request, 502, { error: "Speech-to-text conversion failed" })
     }
 
     const data = await response.json()
-    return NextResponse.json({ text: data.text })
+    let output
+    try {
+      output = sttResponseSchema.parse({ text: data.text })
+    } catch (error) {
+      logger.error(`STT response validation error: ${(error as Error).message}`)
+      return buildErrorResponse(request, 502, {
+        error: "Invalid response from speech-to-text service",
+      })
+    }
+
+    return buildErrorResponse(request, 200, output)
   } catch (error) {
-    console.error("STT route error:", error)
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    )
+    if (isTimeoutError(error)) {
+      logger.error(`STT request timed out: ${error.message}`)
+      return buildErrorResponse(request, 504, { error: "Speech-to-text conversion timed out" })
+    }
+
+    logger.error(`STT route error: ${(error as Error).message}`)
+    return buildErrorResponse(request, 500, {
+      error: "Internal server error",
+    })
   }
 }

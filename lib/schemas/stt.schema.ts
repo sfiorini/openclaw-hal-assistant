@@ -17,8 +17,8 @@ export const sttRequestSchema = z
   .object({
     audio: z
       .any()
-      .refine((value) => value !== undefined && value !== null, {
-        message: "audio is required",
+      .refine((value) => value instanceof Blob, {
+        message: "audio must be a file",
       })
       .openapi({
         description: "Audio file uploaded as multipart/form-data field 'audio'.",
