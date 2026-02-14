@@ -1,0 +1,14 @@
+.git
+.gitignore
+.github
+node_modules
+coverage
+.next
+dist
+tmp
+temp
+npm-debug.log
+pnpm-debug.log
+.env
+*.local
+tests
