@@ -6,7 +6,17 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "pnpm test && pnpm test:e2e",
+    "verify:env": "node scripts/verify-env.mjs",
+    "prebuild": "pnpm verify:env",
+    "prestart": "pnpm verify:env",
+    "postinstall": "playwright install --with-deps"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -61,11 +71,21 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.13",
+    "@asteasolutions/zod-to-openapi": "^6.3.0",
+    "@playwright/test": "^1.45.0",
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/react": "^16.0.0",
     "@types/node": "^22",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "happy-dom": "^15.0.0",
+    "msw": "^2.3.0",
+    "playwright": "^1.45.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
+    "vitest": "^2.0.0",
     "typescript": "5.7.3"
   },
   "pnpm": {
