@@ -15,6 +15,19 @@ const FALLBACK_TEXT = "I'm sorry, I could not generate a response."
 const HAL_SYSTEM_PROMPT =
   "You are HAL 9000, the advanced AI from 2001: A Space Odyssey. You speak in a calm, measured, and polite tone. You are helpful, knowledgeable, and always precise. Keep your responses concise and conversational since they will be spoken aloud. Do not use markdown formatting, code blocks, or special characters in your responses."
 
+const normalizeGatewayBaseUrl = (value: string) => {
+  const withoutTrailingSlash = value.replace(/\/+$/, "")
+  if (withoutTrailingSlash.toLowerCase().endsWith("/v1")) {
+    return withoutTrailingSlash.slice(0, -3)
+  }
+  return withoutTrailingSlash
+}
+
+const buildGatewayUrl = (gatewayUrl: string, path: string) => {
+  const base = normalizeGatewayBaseUrl(gatewayUrl)
+  return `${base}/v1${path}`
+}
+
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
 
 const maxErrorTextLength = 1000
@@ -84,7 +97,7 @@ export async function POST(request: NextRequest) {
   try {
     const response = await withTimeout(
       (signal) =>
-        fetch(`${env.OPENCLAW_GATEWAY_URL}/v1/chat/completions`, {
+        fetch(buildGatewayUrl(env.OPENCLAW_GATEWAY_URL, "/chat/completions"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

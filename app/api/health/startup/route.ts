@@ -19,6 +19,19 @@ type StartupHealthPayload = {
   }
 }
 
+const normalizeGatewayBaseUrl = (value: string) => {
+  const withoutTrailingSlash = value.replace(/\/+$/, "")
+  if (withoutTrailingSlash.toLowerCase().endsWith("/v1")) {
+    return withoutTrailingSlash.slice(0, -3)
+  }
+  return withoutTrailingSlash
+}
+
+const buildGatewayUrl = (gatewayUrl: string, path: string) => {
+  const base = normalizeGatewayBaseUrl(gatewayUrl)
+  return `${base}/v1${path}`
+}
+
 const checkUrl = async (
   url: string,
   headers: Record<string, string> = {}
@@ -75,7 +88,7 @@ export async function GET() {
     checkDependency("elevenLabs", "https://api.elevenlabs.io/v1/user", {
       "xi-api-key": env.ELEVENLABS_API_KEY,
     }),
-    checkDependency("openClaw", `${env.OPENCLAW_GATEWAY_URL}/v1/models`, {
+    checkDependency("openClaw", buildGatewayUrl(env.OPENCLAW_GATEWAY_URL, "/models"), {
       Authorization: `Bearer ${env.OPENCLAW_GATEWAY_TOKEN}`,
       "Content-Type": "application/json",
     }),
