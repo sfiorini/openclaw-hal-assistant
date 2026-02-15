@@ -31,7 +31,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${spaceMono.variable} font-sans antialiased`}>
+      <body
+        className={`${inter.variable} ${spaceMono.variable} font-sans antialiased overflow-hidden h-svh`}
+      >
         {children}
       </body>
     </html>

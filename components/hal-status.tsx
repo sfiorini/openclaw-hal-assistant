@@ -28,9 +28,9 @@ const stateDescriptions: Record<HalState, string> = {
 
 export function HalStatus({ state, transcript, response, error }: HalStatusProps) {
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-lg px-4">
+    <div className="flex min-h-0 w-full flex-1 flex-col items-stretch gap-5 px-2 sm:px-4">
       {/* Status indicator */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-center gap-3">
         <div
           className={cn(
             "w-2 h-2 rounded-full transition-colors duration-300",
@@ -53,32 +53,39 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
 
       {/* Error message */}
       {error && (
-        <div className="w-full rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
+        <div className="w-full rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:px-4 sm:py-3">
           <p className="font-mono text-xs text-destructive text-center">{error}</p>
         </div>
       )}
 
       {/* Transcript */}
-      {transcript && (
-        <div className="w-full rounded-md border border-border bg-card px-4 py-3">
-          <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
-            You said:
-          </p>
-          <p className="font-mono text-sm text-foreground leading-relaxed">
-            {transcript}
-          </p>
-        </div>
-      )}
+      {(transcript || response) && (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+          {transcript && (
+            <div className="min-h-0 flex min-w-0 flex-1 flex-col rounded-md border border-border bg-card px-3 py-2 sm:px-4 sm:py-3">
+              <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+                You said:
+              </p>
+              <div className="mt-1 min-h-0 flex-1 overflow-auto">
+                <p className="font-mono text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                  {transcript}
+                </p>
+              </div>
+            </div>
+          )}
 
-      {/* Response */}
-      {response && (
-        <div className="w-full rounded-md border border-hal-red/20 bg-hal-red/5 px-4 py-3">
-          <p className="font-mono text-[10px] text-hal-red/70 uppercase tracking-wider mb-1">
-            HAL 9000:
-          </p>
-          <p className="font-mono text-sm text-foreground leading-relaxed">
-            {response}
-          </p>
+          {response && (
+            <div className="min-h-0 flex min-w-0 flex-1 flex-col rounded-md border border-hal-red/20 bg-hal-red/5 px-3 py-2 sm:px-4 sm:py-3">
+              <p className="font-mono text-[10px] text-hal-red/70 uppercase tracking-wider">
+                HAL 9000:
+              </p>
+              <div className="mt-1 min-h-0 flex-1 overflow-auto">
+                <p className="font-mono text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                  {response}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ export function HalPanel() {
     useVoiceAssistant()
 
   return (
-    <main className="relative flex min-h-svh flex-col items-center bg-background px-4 py-5 overflow-hidden">
+    <main className="relative flex h-full flex-col items-center bg-background px-4 py-5 overflow-hidden">
       {/* Subtle radial vignette */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -21,7 +21,7 @@ export function HalPanel() {
       />
 
       {/* Top label */}
-      <div className="z-10 mt-1 flex flex-col items-center gap-2">
+      <div className="z-10 mt-4 flex flex-col items-center gap-2">
         <h1 className="font-mono text-xs tracking-[0.5em] text-muted-foreground uppercase">
           HAL 9000
         </h1>
@@ -32,7 +32,7 @@ export function HalPanel() {
       </div>
 
       {/* Central content */}
-      <div className="relative z-10 mt-4 mb-2 flex w-full max-w-lg flex-1 min-h-0 flex-col items-center justify-start gap-4 overflow-hidden">
+      <div className="relative z-10 mt-8 mb-4 flex w-full max-w-6xl flex-1 min-h-0 flex-col items-center justify-start gap-8 overflow-hidden">
         <HalEye
           state={state}
           onClick={toggleRecording}
@@ -49,7 +49,7 @@ export function HalPanel() {
       </div>
 
       {/* Bottom system info */}
-      <div className="z-10 mb-1 flex flex-col items-center gap-1">
+      <div className="z-10 mb-1 flex flex-col items-center gap-2">
         <p className="font-mono text-[9px] tracking-[0.3em] text-muted-foreground/40 uppercase">
           Voice-Activated Conversational Interface
         </p>
