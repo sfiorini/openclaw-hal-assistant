@@ -14,6 +14,7 @@ test.describe("voice flow", () => {
     const eyeButton = page.getByRole("button", { name: /start recording/i })
     const speakingState = page.getByText("SPEAKING")
     const processingState = page.getByText("PROCESSING")
+    const waitingState = page.getByText("WAITING", { exact: true })
     const readyState = page.getByText("READY")
     const recordingState = page.getByText("RECORDING")
 
@@ -25,6 +26,7 @@ test.describe("voice flow", () => {
     await stopButton.click()
 
     await expect(processingState).toBeVisible()
+    await expect(waitingState).toBeVisible({ timeout: 5000 })
     await expect(speakingState).toBeVisible({ timeout: 5000 })
     await expect(readyState).toBeVisible({ timeout: 5000 })
     await expect(page.getByText("You said:")).toBeVisible()

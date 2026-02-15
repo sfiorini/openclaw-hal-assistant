@@ -29,6 +29,11 @@ Notes:
 - `pnpm docker:build` does not require `.env` at build time. Environment validation is intentionally not run during the image build; pass required variables at runtime (via `docker run --env-file .env` or compose).
 - Docker context ignores `.env` via `.dockerignore` as a security default, so set runtime variables via `--env-file .env` (compose) or `docker run --env-file .env`.
 
+When using async chat:
+
+- First API call after startup should handle `202` + `jobId` and poll `/api/chat/jobs/{jobId}`.
+- Keep `OPENCLAW_GATEWAY_URL` available before calling chat jobs if your container image pre-validates env during startup.
+
 Compose mode:
 
 ```bash

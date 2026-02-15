@@ -94,6 +94,14 @@ const envSchema = z.object({
       .positive()
       .default(60)
   ),
+  OPENCLAW_CHAT_REQUEST_TIMEOUT_MS: z.preprocess(
+    parseNumber,
+    z
+      .number({ invalid_type_error: "OPENCLAW_CHAT_REQUEST_TIMEOUT_MS must be a positive number" })
+      .int()
+      .positive()
+      .default(120_000)
+  ),
   LOG_LEVEL: z.preprocess(
     parseLogLevel,
     z.enum(["error", "warn", "info", "debug"]).default("info")

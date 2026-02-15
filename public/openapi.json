@@ -8,6 +8,13 @@
     "/api/chat": {
       "post": {}
     },
+    "/api/chat/jobs/{jobId}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/chat/jobs": {
+      "get": {}
+    },
     "/api/stt": {
       "post": {
         "requestBody": {

@@ -14,6 +14,7 @@ const stateLabels: Record<HalState, string> = {
   idle: "READY",
   recording: "RECORDING",
   processing: "PROCESSING",
+  waiting_for_response: "WAITING",
   speaking: "SPEAKING",
 }
 
@@ -21,6 +22,7 @@ const stateDescriptions: Record<HalState, string> = {
   idle: "Press the eye to speak",
   recording: "Listening... Press again to stop",
   processing: "Analyzing your request...",
+  waiting_for_response: "Processing request. Waiting for result...",
   speaking: "HAL is responding...",
 }
 
@@ -35,6 +37,7 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
             state === "idle" && "bg-hal-red opacity-60",
             state === "recording" && "bg-[hsl(0,100%,60%)] animate-pulse",
             state === "processing" && "bg-[hsl(40,100%,50%)] animate-pulse",
+            state === "waiting_for_response" && "bg-[hsl(0,100%,70%)] animate-pulse",
             state === "speaking" && "bg-[hsl(0,85%,50%)] animate-pulse",
           )}
         />

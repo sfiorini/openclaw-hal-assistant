@@ -38,6 +38,11 @@ describe("OpenAPI and docs", () => {
       info: { title: "OpenClaw HAL", version: "1.0.0" },
       paths: {
         "/api/chat": { post: {} },
+        "/api/chat/jobs/{jobId}": {
+          get: {},
+          delete: {},
+        },
+        "/api/chat/jobs": { get: {} },
         "/api/stt": {
           post: {
             requestBody: {
@@ -63,11 +68,13 @@ describe("OpenAPI and docs", () => {
     const payload = await response.json()
 
     expect(response.status).toBe(200)
-    expect(payload.openapi).toBe("3.0.0")
-    expect(payload.paths["/api/chat"]).toBeDefined()
-    expect(payload.paths["/api/stt"]).toBeDefined()
-    expect(payload.paths["/api/tts"]).toBeDefined()
-    expect(payload.paths["/api/stt"].post.requestBody.content["multipart/form-data"]).toBeDefined()
+      expect(payload.openapi).toBe("3.0.0")
+      expect(payload.paths["/api/chat"]).toBeDefined()
+      expect(payload.paths["/api/chat/jobs/{jobId}"]).toBeDefined()
+      expect(payload.paths["/api/chat/jobs"]).toBeDefined()
+      expect(payload.paths["/api/stt"]).toBeDefined()
+      expect(payload.paths["/api/tts"]).toBeDefined()
+      expect(payload.paths["/api/stt"].post.requestBody.content["multipart/form-data"]).toBeDefined()
   })
 
   it("returns 404 for openapi when docs are disabled", async () => {

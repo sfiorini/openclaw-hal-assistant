@@ -2,8 +2,7 @@
 
 ## Reviewed Scope
 
-- Task 0–11 implementation items from the openclaw hal plan are completed.
-  - Task 10 (package metadata) and Task 11 (E2E tests) were completed alongside earlier tasks.
+- Async chat timeout migration items for `2024-02-15` are completed with follow-up verification in-progress.
 - Remaining deferred items:
   - CI/CD pipeline
   - monitoring/metrics endpoint

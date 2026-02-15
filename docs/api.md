@@ -44,7 +44,25 @@
   - JSON request:
     - `message`: string (1-4000 chars)
     - `conversationHistory` (optional, max 20 messages)
-  - Success: `200` with assistant reply and updated history
+  - Success: `202` with async job descriptor
+    - `jobId`: UUID
+    - `status`: `"queued"`
+    - `pollAfterMs`: minimum delay before first poll (ms)
+    - `maxPollAttempts`: max polling attempts
+    - `maxWaitMs`: max wall-clock wait for a response
+
+- `GET /api/chat/jobs/{jobId}`
+  - Polling endpoint for async completion.
+  - States:
+    - `queued` / `running` while in progress
+    - `completed` includes `response.text` and `response.conversationHistory`
+    - `failed` / `cancelled` include `error.code` + `error.message`
+  - Always returns `pollAfterMs` guidance.
+
+- `DELETE /api/chat/jobs/{jobId}`
+  - Cancels queued/running jobs.
+  - Returns `200` when cancelled (and for already-cancelled jobs),
+    `409` when completed/failed, `404` when unknown.
   - Errors: `400`, `502`, `429`, `500`
 
 ### OpenAPI/docs

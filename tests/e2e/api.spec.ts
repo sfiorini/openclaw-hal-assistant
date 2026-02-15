@@ -3,6 +3,24 @@ import { expect, test } from "@playwright/test"
 import { buildHeaders } from "./fixtures"
 
 test.describe("API direct usage", () => {
+  const pollForCompletion = async (requestClient: typeof request, jobId: string) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const poll = await requestClient.get(`/api/chat/jobs/${jobId}`)
+      expect(poll.status()).toBe(200)
+      const payload = await poll.json()
+      if (payload.status === "completed") {
+        return payload
+      }
+      if (payload.status === "failed" || payload.status === "cancelled") {
+        throw new Error(`Chat job did not complete: ${payload.status}`)
+      }
+
+      await requestClient.waitForTimeout(100)
+    }
+
+    throw new Error("Chat job never completed")
+  }
+
   test("returns STT, chat, and TTS responses", async ({ request }) => {
     const sttIp = "198.51.100.10"
     const chatIp = "198.51.100.11"
@@ -37,11 +55,15 @@ test.describe("API direct usage", () => {
       }),
     })
 
-    expect(chatResponse.status()).toBe(200)
-    const chatPayload = await chatResponse.json()
-    expect(chatPayload.text).toBe("Mocked response from OpenClaw.")
-    expect(Array.isArray(chatPayload.conversationHistory)).toBeTruthy()
-    expect(chatPayload.conversationHistory).toHaveLength(3)
+    expect(chatResponse.status()).toBe(202)
+      const chatPayload = await chatResponse.json()
+      expect(chatPayload.status).toBe("queued")
+      expect(typeof chatPayload.jobId).toBe("string")
+
+      const completed = await pollForCompletion(request, chatPayload.jobId)
+      expect(completed.response.text).toBe("Mocked response from OpenClaw.")
+      expect(Array.isArray(completed.response.conversationHistory)).toBeTruthy()
+      expect(completed.response.conversationHistory).toHaveLength(3)
 
     const ttsResponse = await request.post("/api/tts", {
       headers: {
@@ -85,8 +107,8 @@ test.describe("API direct usage", () => {
       data: JSON.stringify(payload),
     })
 
-    expect(first.status()).toBe(200)
-    expect(second.status()).toBe(200)
+    expect(first.status()).toBe(202)
+    expect(second.status()).toBe(202)
     expect(third.status()).toBe(429)
     const payloadBody = await third.json()
     expect(payloadBody.error).toBe("Too many requests")

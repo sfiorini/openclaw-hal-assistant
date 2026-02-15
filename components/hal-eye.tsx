@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils"
 
-export type HalState = "idle" | "recording" | "processing" | "speaking"
+export type HalState = "idle" | "recording" | "processing" | "waiting_for_response" | "speaking"
 
 interface HalEyeProps {
   state: HalState
@@ -14,7 +14,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
+        disabled={disabled && state !== "waiting_for_response"}
       aria-label={
         state === "recording"
           ? "Stop recording"
@@ -44,6 +44,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
           state === "idle" && "animate-hal-pulse",
           state === "recording" && "animate-hal-recording",
           state === "processing" && "animate-hal-pulse",
+          state === "waiting_for_response" && "animate-hal-pulse",
           state === "speaking" && "animate-hal-speaking",
         )}
         style={{
@@ -61,7 +62,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
       </div>
 
       {/* Processing spinner overlay */}
-      {state === "processing" && (
+      {(state === "processing" || state === "waiting_for_response") && (
         <div className="absolute inset-8 md:inset-10 lg:inset-12 rounded-full">
           <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[hsl(0,100%,70%)] animate-spin" />
         </div>

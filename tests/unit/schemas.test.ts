@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
   chatMessageSchema,
   chatRequestSchema,
+  chatJobSubmissionResponseSchema,
+  chatJobBaseResponseSchema,
+  chatJobCompletedSchema,
+  chatJobStatusSchema,
   chatResponseSchema,
 } from "../../lib/schemas/chat.schema"
 import { sttRequestSchema, sttResponseSchema } from "../../lib/schemas/stt.schema"
@@ -95,5 +99,62 @@ describe("schema validations", () => {
     expect(sttResponseSchema.parse({ text: "done" })).toEqual({ text: "done" })
     expect(() => sttRequestSchema.parse({})).toThrow()
     expect(() => sttRequestSchema.parse({ audio: null })).toThrow()
+  })
+
+  it("validates chat job submission response", () => {
+    const payload = {
+      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      status: "queued",
+      pollAfterMs: 500,
+      maxPollAttempts: 240,
+      maxWaitMs: 240000,
+    }
+
+    expect(chatJobSubmissionResponseSchema.parse(payload)).toEqual(payload)
+  })
+
+  it("validates chat job terminal status schema", () => {
+    const payload = {
+      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      status: "completed",
+      pollAfterMs: 0,
+      attemptCount: 1,
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      response: {
+        text: "ok",
+        conversationHistory: [{ role: "assistant", content: "hi" }],
+      },
+    }
+
+    expect(chatJobCompletedSchema.parse(payload).jobId).toBe(payload.jobId)
+    expect(chatJobCompletedSchema.parse(payload).status).toBe("completed")
+  })
+
+  it("validates chat job status union schema", () => {
+    const queued = chatJobStatusSchema.parse({
+      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      status: "queued",
+      pollAfterMs: 500,
+      attemptCount: 0,
+      createdAt: new Date().toISOString(),
+    })
+
+    expect(["queued", "running", "completed", "failed", "cancelled"]).toContain(queued.status)
+
+    const failed = chatJobStatusSchema.parse({
+      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      status: "failed",
+      pollAfterMs: 0,
+      attemptCount: 2,
+      createdAt: new Date().toISOString(),
+      error: {
+        code: "upstream_error",
+        message: "OpenClaw request failed",
+      },
+    })
+
+    expect(failed.status).toBe("failed")
   })
 })

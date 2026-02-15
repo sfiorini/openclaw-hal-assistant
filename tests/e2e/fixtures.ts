@@ -35,12 +35,32 @@ export const installBrowserApiMocks = async (
 
       const mockModelsResponse = { data: [{ id: "main" }] }
       const mockSttResponse = { text: injectedSttText }
-      const mockChatResponse = {
-        text: injectedChatText,
-        conversationHistory: [
-          { role: "user", content: "what is the weather" },
-          { role: "assistant", content: injectedChatText },
-        ],
+      const mockChatSubmissionResponse = {
+        jobId: "e2e-mock-chat-job",
+        status: "queued" as const,
+        pollAfterMs: 500,
+        maxPollAttempts: 20,
+        maxWaitMs: 10000,
+      }
+      const mockChatTerminalResponse = {
+        jobId: "e2e-mock-chat-job",
+        status: "completed" as const,
+        pollAfterMs: 0,
+        attemptCount: 2,
+        createdAt: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        response: {
+          text: injectedChatText,
+          conversationHistory: [
+            { role: "user", content: "what is the weather" },
+            { role: "assistant", content: injectedChatText },
+          ],
+        },
+      }
+
+      const mockChatJobPollState = {
+        attempts: 0,
       }
 
       const originalFetch = window.fetch.bind(window)
@@ -61,27 +81,49 @@ export const installBrowserApiMocks = async (
           headers: requestHeaders,
         }
 
-        if (url.pathname === "/api/stt") {
+        if (url.pathname.startsWith("/api/stt")) {
           return Response.json(mockSttResponse, {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })
         }
 
-        if (url.pathname === "/api/chat") {
-          return Response.json(mockChatResponse, {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
-        }
-
-        if (url.pathname === "/api/tts") {
+        if (url.pathname.startsWith("/api/tts")) {
           return new Response(mockAudio, {
             status: 200,
             headers: {
               "Content-Type": "audio/mpeg",
               "Content-Length": String(mockAudio.byteLength),
             },
+          })
+        }
+
+        if (url.pathname === "/api/chat" || url.pathname === "/api/chat/") {
+          mockChatJobPollState.attempts = 0
+          return Response.json(mockChatSubmissionResponse, {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+
+        if (url.pathname.startsWith("/api/chat/jobs/")) {
+          mockChatJobPollState.attempts += 1
+          let pollPayload: Record<string, unknown>
+
+          if (mockChatJobPollState.attempts < 2) {
+            pollPayload = {
+              ...mockChatTerminalResponse,
+              status: "running",
+              startedAt: new Date().toISOString(),
+              pollAfterMs: 250,
+            }
+          } else {
+            pollPayload = mockChatTerminalResponse
+          }
+
+          return Response.json(pollPayload, {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
           })
         }
 
@@ -167,7 +209,7 @@ export const installBrowserApiMocks = async (
             if (this.onended) {
               this.onended(new Event("ended"))
             }
-          }, 350)
+          }, 2500)
 
           return Promise.resolve()
         }

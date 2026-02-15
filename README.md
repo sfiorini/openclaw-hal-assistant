@@ -38,10 +38,16 @@ pnpm dev
 
 5. Call endpoints (examples)
 
+Submit chat and poll for completion:
+
 ```bash
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello HAL"}'
+```
+
+```bash
+curl -X GET http://localhost:3000/api/chat/jobs/<jobId>
 ```
 
 ```bash
