@@ -50,8 +50,15 @@ const parseJobResponse = (payload: unknown) => {
     throw new Error("Invalid job polling response")
   }
 
+  const responseJobId =
+    typeof payload.jobId === "string" && payload.jobId.length > 0
+      ? payload.jobId
+      : typeof payload.id === "string" && payload.id.length > 0
+        ? payload.id
+        : undefined
+
   return {
-    jobId: typeof payload.jobId === "string" ? payload.jobId : "",
+    jobId: responseJobId,
     status: payload.status,
     pollAfterMs: typeof payload.pollAfterMs === "number" ? payload.pollAfterMs : CHAT_POLL_FALLBACK_DELAY_MS,
     progress: typeof payload.progress === "string" ? payload.progress : undefined,
@@ -214,8 +221,11 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
         const payload = await pollResponse.json()
         const pollState = parseJobResponse(payload)
 
-        if (!pollState.jobId) {
+        if (!pollState.jobId && !opts.jobId) {
           throw new Error("Invalid job response")
+        }
+        if (pollState.jobId && pollState.jobId !== opts.jobId) {
+          throw new Error("Job response mismatch")
         }
 
         if (pollState.status === "completed") {
