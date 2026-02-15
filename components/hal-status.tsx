@@ -69,7 +69,7 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
               <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
                 You said:
               </p>
-              <div className="mt-1 min-h-0 flex-1 h-full overflow-y-auto overflow-x-hidden">
+              <div className="mt-1 min-h-0 flex-1 h-full overflow-y-auto overflow-x-hidden scrollbar-themed">
                 <p className="font-mono text-sm text-foreground leading-relaxed whitespace-pre-wrap">
                   {transcript}
                 </p>
@@ -82,7 +82,7 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
               <p className="font-mono text-[10px] text-hal-red/70 uppercase tracking-wider">
                 HAL 9000:
               </p>
-              <div className="mt-1 min-h-0 flex-1 h-full overflow-y-auto overflow-x-hidden">
+              <div className="mt-1 min-h-0 flex-1 h-full overflow-y-auto overflow-x-hidden scrollbar-themed">
                 <p className="font-mono text-sm text-foreground leading-relaxed whitespace-pre-wrap">
                   {response}
                 </p>

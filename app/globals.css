@@ -44,4 +44,29 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  .scrollbar-themed {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--hal-red)) hsl(var(--background) / 0.15);
+  }
+
+  .scrollbar-themed::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-themed::-webkit-scrollbar-track {
+    background: hsl(var(--background) / 0.2);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-themed::-webkit-scrollbar-thumb {
+    background: hsl(var(--hal-red) / 0.75);
+    border-radius: 9999px;
+    border: 2px solid hsl(var(--background) / 0.2);
+  }
+
+  .scrollbar-themed::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--hal-red));
+  }
 }
