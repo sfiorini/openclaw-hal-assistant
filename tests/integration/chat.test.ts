@@ -69,15 +69,28 @@ const createJobRequest = (jobId: string, method = "GET") =>
     method,
   })
 
+type ChatJobPollStatus = "queued" | "running" | "processing" | "completed" | "failed" | "cancelled"
+
+type ChatJobPollResponse = {
+  jobId: string
+  status: ChatJobPollStatus
+  sessionId?: string
+  error?: {
+    code?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
 const pollJob = async (jobId: string) => {
   const response = await GET(createJobRequest(jobId), {
     params: Promise.resolve({ id: jobId }),
   })
-  return { response, payload: await response.json() }
+  return { response, payload: (await response.json()) as ChatJobPollResponse }
 }
 
-const waitForTerminal = async (jobId: string, attempts = 10) => {
-  let lastPayload: Record<string, unknown> | null = null
+const waitForTerminal = async (jobId: string, attempts = 10): Promise<ChatJobPollResponse> => {
+  let lastPayload: ChatJobPollResponse | null = null
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const polled = await pollJob(jobId)
@@ -281,7 +294,7 @@ describe("Chat async job routes", () => {
     expect(terminalStatus.status).toBe("failed")
     expect(terminalStatus.sessionId).toBe(payload.sessionId)
     expect(terminalStatus.error).toBeDefined()
-    expect(terminalStatus.error.code).toBe("upstream_error")
+    expect((terminalStatus.error as { code?: string } | undefined)?.code).toBe("upstream_error")
   })
 
   it("returns 429 when rate limit is exceeded", async () => {
@@ -304,7 +317,6 @@ describe("Chat async job routes", () => {
 
     const cancelResponse = await DELETE(createJobRequest(payload.jobId), {
       params: Promise.resolve({ id: payload.jobId }),
-      method: "DELETE",
     })
 
     expect(cancelResponse.status).toBe(200)
@@ -315,7 +327,6 @@ describe("Chat async job routes", () => {
   it("returns 404 for unknown job id on cancellation", async () => {
     const missing = await DELETE(createJobRequest("f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2"), {
       params: Promise.resolve({ id: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2" }),
-      method: "DELETE",
     })
 
     expect(missing.status).toBe(404)
@@ -327,13 +338,11 @@ describe("Chat async job routes", () => {
 
     const firstCancel = await DELETE(createJobRequest(payload.jobId), {
       params: Promise.resolve({ id: payload.jobId }),
-      method: "DELETE",
     })
     expect(firstCancel.status).toBe(200)
 
     const secondCancel = await DELETE(createJobRequest(payload.jobId), {
       params: Promise.resolve({ id: payload.jobId }),
-      method: "DELETE",
     })
     expect(secondCancel.status).toBe(200)
     const secondPayload = await secondCancel.json()

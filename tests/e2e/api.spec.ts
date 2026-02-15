@@ -1,21 +1,23 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type APIRequestContext } from "@playwright/test"
 
 import { buildHeaders } from "./fixtures"
 
 test.describe("API direct usage", () => {
-  const pollForCompletion = async (requestClient: typeof request, jobId: string) => {
+  const pollForCompletion = async (requestClient: APIRequestContext, jobId: string) => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const poll = await requestClient.get(`/api/chat/jobs/${jobId}`)
-      expect(poll.status()).toBe(200)
-      const payload = await poll.json()
-      if (payload.status === "completed") {
-        return payload
-      }
+    const poll = await requestClient.get(`/api/chat/jobs/${jobId}`)
+    expect(poll.status()).toBe(200)
+    const payload = await poll.json()
+    if (payload.status === "completed") {
+      return payload
+    }
       if (payload.status === "failed" || payload.status === "cancelled") {
         throw new Error(`Chat job did not complete: ${payload.status}`)
       }
 
-      await requestClient.waitForTimeout(100)
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100)
+      })
     }
 
     throw new Error("Chat job never completed")
