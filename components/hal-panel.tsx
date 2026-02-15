@@ -9,7 +9,7 @@ export function HalPanel() {
     useVoiceAssistant()
 
   return (
-    <main className="relative flex h-full flex-col items-center bg-background px-4 py-5 overflow-hidden">
+    <main className="relative flex min-h-svh flex-col items-center bg-background px-4 py-5 overflow-hidden">
       {/* Subtle radial vignette */}
       <div
         className="pointer-events-none absolute inset-0"
