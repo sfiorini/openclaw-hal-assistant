@@ -2,6 +2,8 @@
 
 OpenClaw HAL Assistant is a HAL 9000-inspired voice assistant API built with Next.js App Router. It exposes speech-to-text, text-to-speech, and chat endpoints backed by ElevenLabs and OpenClaw services.
 
+<img src="./docs/images/hal-ui-latest.png" alt="HAL 9000 interface screenshot" width="720" />
+
 ## Presentation
 
 - **Persona**: conversational assistant with HAL 9000 style responses
@@ -45,10 +47,6 @@ curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello HAL"}'
 ```
-
-## UI Preview
-
-![HAL 9000 interface screenshot](./docs/images/hal-ui-latest.png)
 
 ```bash
 curl -X GET http://localhost:3000/api/chat/jobs/<jobId>
