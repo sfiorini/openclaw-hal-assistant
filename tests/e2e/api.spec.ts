@@ -41,7 +41,7 @@ test.describe("API direct usage", () => {
     const chatPayload = await chatResponse.json()
     expect(chatPayload.text).toBe("Mocked response from OpenClaw.")
     expect(Array.isArray(chatPayload.conversationHistory)).toBeTruthy()
-    expect(chatPayload.conversationHistory).toHaveLength(2)
+    expect(chatPayload.conversationHistory).toHaveLength(3)
 
     const ttsResponse = await request.post("/api/tts", {
       headers: {
