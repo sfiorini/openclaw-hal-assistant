@@ -95,9 +95,11 @@ export async function POST(request: NextRequest) {
   ]
 
   try {
+    const chatUrl = buildGatewayUrl(env.OPENCLAW_GATEWAY_URL, "/chat/completions")
+
     const response = await withTimeout(
       (signal) =>
-        fetch(buildGatewayUrl(env.OPENCLAW_GATEWAY_URL, "/chat/completions"), {
+        fetch(chatUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -116,7 +118,7 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text()
-      logger.error(`OpenClaw gateway error: ${errorText}`)
+      logger.error(`OpenClaw gateway error at ${chatUrl}: ${errorText}`)
       return buildErrorResponse(request, 502, {
         error: "Chat completion failed",
         upstream: {
