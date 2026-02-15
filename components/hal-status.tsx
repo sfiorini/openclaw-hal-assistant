@@ -28,7 +28,7 @@ const stateDescriptions: Record<HalState, string> = {
 
 export function HalStatus({ state, transcript, response, error }: HalStatusProps) {
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col items-stretch gap-5 px-2 sm:px-4 overflow-hidden">
+    <div className="flex min-h-0 w-full flex-1 flex-col items-stretch gap-5 px-2 sm:px-4">
       {/* Status indicator */}
       <div className="flex items-center justify-center gap-3">
         <div
