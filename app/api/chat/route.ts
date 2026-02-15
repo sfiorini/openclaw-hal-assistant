@@ -10,7 +10,13 @@ import {
   chatRequestSchema,
 } from "../../../lib/schemas/chat.schema"
 import { parseChatSessionCommand } from "../../../lib/chat/schemas/session.schema"
-import { getOrCreateSession, getSessionForJobLimitCheck, releaseSessionJobSlot } from "../../../lib/chat/sessions"
+import {
+  getOrCreateSession,
+  getSessionForJobLimitCheck,
+  appendToSessionConversation,
+  releaseSessionJobSlot,
+  setSessionLastJobId,
+} from "../../../lib/chat/sessions"
 import { getServerEnvConfig } from "../../../lib/config/env"
 import {
   createChatJob,
@@ -120,6 +126,25 @@ const executeChatJob = async (
       return
     }
 
+    try {
+      await appendToSessionConversation(payload.sessionId, [
+        {
+          role: "user",
+          content: payload.message,
+        },
+        {
+          role: "assistant",
+          content: result.text,
+        },
+      ])
+    } catch (error) {
+      logger.warn(
+        `[${CHAT_OPERATION}] unable to persist chat turn for session ${payload.sessionId}: ${getErrorMessage(
+          error
+        )}`
+      )
+    }
+
     const durationMs = Date.now() - startedAt
     markChatJobProgress(jobId, "finalizing")
     markChatJobFinalized(
@@ -220,6 +245,7 @@ export async function POST(request: NextRequest) {
         sessionId: sessionContext.sessionId,
         idempotencyKey,
       })
+      await setSessionLastJobId(sessionContext.sessionId, job.id)
     } catch (error) {
       await releaseSessionJobSlot(sessionContext.sessionId)
       throw error

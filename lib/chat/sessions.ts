@@ -26,7 +26,14 @@ export type ChatSession = {
 }
 
 type SessionStoreEvent = {
-  event: "session_created" | "session_reset" | "session_appended" | "session_touched" | "session_job_count_changed" | "session_cleaned"
+  event:
+    | "session_created"
+    | "session_reset"
+    | "session_appended"
+    | "session_touched"
+    | "session_job_count_changed"
+    | "session_job_assigned"
+    | "session_cleaned"
   id: string
   reason?: string
 }
@@ -268,6 +275,29 @@ export const getSessionForJobLimitCheck = async (sessionId: string): Promise<Cha
     }
     sessionStore.set(existing.id, next)
     emitSessionEvent({ event: "session_job_count_changed", id: existing.id })
+    return clone(next)
+  })
+}
+
+export const setSessionLastJobId = async (sessionId: string, jobId: string) => {
+  return withSessionLock(sessionId, () => {
+    const existing = getChatSession(sessionId)
+    if (!existing) {
+      const error = {
+        code: "session_not_found",
+        message: "Session does not exist",
+      }
+      throw error
+    }
+
+    const next = {
+      ...existing,
+      lastJobId: jobId,
+      updatedAt: nowIso(),
+      expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
+    }
+    sessionStore.set(existing.id, next)
+    emitSessionEvent({ event: "session_job_assigned", id: existing.id, reason: jobId })
     return clone(next)
   })
 }

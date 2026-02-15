@@ -5,7 +5,7 @@ import { http, HttpResponse } from "msw"
 import { OPTIONS, POST } from "../../app/api/chat/route"
 import { GET, DELETE } from "../../app/api/chat/jobs/[id]/route"
 import { __resetChatJobsForTests } from "../../lib/chat/jobs"
-import { __resetChatSessionsForTests } from "../../lib/chat/sessions"
+import { __resetChatSessionsForTests, getChatSession } from "../../lib/chat/sessions"
 import { server } from "../mocks/server"
 
 const baseEnv = {
@@ -151,6 +151,65 @@ describe("Chat async job routes", () => {
 
     expect(second.status).toBe(202)
     expect(secondPayload.sessionId).toBe(firstPayload.sessionId)
+  })
+
+  it("persists session turns and reuses session history", async () => {
+    const captured: Record<string, unknown>[] = []
+
+    server.use(
+      http.post(/.*\/v1\/chat\/completions$/, async ({ request }) => {
+        const payload = await request.json()
+        captured.push(payload as Record<string, unknown>)
+
+        const body = payload as { messages?: Array<{ content?: string; role?: string }> }
+        const lastMessage = body?.messages?.at(-1)?.content ?? "default"
+
+        return HttpResponse.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: `Echo: ${lastMessage}`,
+              },
+            },
+          ],
+        })
+      })
+    )
+
+    const first = await POST(createChatRequest({ message: "Hello there" }))
+    const firstPayload = await first.json()
+    await waitForTerminal(firstPayload.jobId)
+
+    const firstSession = getChatSession(firstPayload.sessionId)
+    expect(firstSession).toBeDefined()
+    expect(firstSession?.conversation).toHaveLength(2)
+    expect(firstSession?.conversation?.[0]).toMatchObject({ role: "user", content: "Hello there" })
+
+    const second = await POST(
+      createChatRequest({
+        message: "How are you?",
+        sessionId: firstPayload.sessionId,
+      })
+    )
+    const secondPayload = await second.json()
+    expect(second.status).toBe(202)
+    expect(secondPayload.sessionId).toBe(firstPayload.sessionId)
+    await waitForTerminal(secondPayload.jobId)
+
+    const updatedSession = getChatSession(firstPayload.sessionId)
+    expect(updatedSession?.conversation).toHaveLength(4)
+
+    const secondRequest = captured[1]
+    const secondMessages = Array.isArray((secondRequest as { messages?: unknown })?.messages)
+      ? ((secondRequest as { messages: Array<{ role?: string; content?: string }> }).messages)
+      : []
+    expect(secondMessages.some((message) => message.role === "user" && message.content === "Hello there")).toBe(
+      true
+    )
+    expect(secondMessages.some((message) => message.role === "user" && message.content === "How are you?")).toBe(
+      true
+    )
   })
 
   it("starts a new session for reset command", async () => {

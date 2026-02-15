@@ -35,8 +35,10 @@ export const installBrowserApiMocks = async (
 
       const mockModelsResponse = { data: [{ id: "main" }] }
       const mockSttResponse = { text: injectedSttText }
+      const mockSessionId = "e2e-mock-session-id"
       const mockChatSubmissionResponse = {
         jobId: "e2e-mock-chat-job",
+        sessionId: mockSessionId,
         status: "queued" as const,
         pollAfterMs: 500,
         maxPollAttempts: 20,
@@ -45,6 +47,7 @@ export const installBrowserApiMocks = async (
       const mockChatTerminalResponse = {
         jobId: "e2e-mock-chat-job",
         status: "completed" as const,
+        sessionId: mockSessionId,
         pollAfterMs: 0,
         attemptCount: 2,
         createdAt: new Date().toISOString(),

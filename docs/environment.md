@@ -24,6 +24,7 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
 
 - `POST /api/chat` returns `202` and a `jobId`.
 - Clients should poll `GET /api/chat/jobs/{jobId}` until terminal state.
+- `sessionId` returned by `/api/chat` is accepted by the frontend and reused across page reloads (stored in localStorage).
 
 ## Using `.env`
 

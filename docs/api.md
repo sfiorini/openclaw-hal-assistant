@@ -43,18 +43,27 @@
 - `POST /api/chat`
   - JSON request:
     - `message`: string (1-4000 chars)
-    - `conversationHistory` (optional, max 20 messages)
+    - `sessionId` (optional, UUID) to continue an existing conversation
+    - `newSession` (optional, default `false`) starts a new session
+    - `conversationHistory` (optional, max 20 messages) used when `sessionId` is not valid/unknown
+      - ignored when the session can be resolved server-side
   - Success: `202` with async job descriptor
     - `jobId`: UUID
+    - `sessionId`: UUID returned by server for this turn
     - `status`: `"queued"`
     - `pollAfterMs`: minimum delay before first poll (ms)
     - `maxPollAttempts`: max polling attempts
     - `maxWaitMs`: max wall-clock wait for a response
+  - Commands:
+    - `"/new <message>"` starts a new session and strips the command
+    - `"/reset"` starts a new empty session (with any remainder text removed)
+    - `/NEW` and `/RESET` are treated as normal text (case-sensitive)
 
 - `GET /api/chat/jobs/{jobId}`
   - Polling endpoint for async completion.
   - States:
     - `queued` / `running` while in progress
+    - all responses include `sessionId`
     - `completed` includes `response.text` and `response.conversationHistory`
     - `failed` / `cancelled` include `error.code` + `error.message`
   - Always returns `pollAfterMs` guidance.

@@ -16,6 +16,7 @@ interface UseVoiceAssistantReturn {
 
 const CHAT_POLL_FALLBACK_DELAY_MS = 500
 const SPEAKING_FALLBACK_TIMEOUT_MS = 4_000
+const OPENCLAW_SESSION_STORAGE_KEY = "openclaw_session_id"
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -36,9 +37,13 @@ const parseChatSubmitResponse = (payload: unknown) => {
   if (typeof payload.maxWaitMs !== "number" || payload.maxWaitMs <= 0) {
     throw new Error("Chat response missing maxWaitMs")
   }
+  if (typeof payload.sessionId !== "string" || !payload.sessionId.trim()) {
+    throw new Error("Chat response missing sessionId")
+  }
 
   return {
     jobId: payload.jobId,
+    sessionId: payload.sessionId,
     pollAfterMs: payload.pollAfterMs,
     maxPollAttempts: payload.maxPollAttempts,
     maxWaitMs: payload.maxWaitMs,
@@ -57,8 +62,14 @@ const parseJobResponse = (payload: unknown) => {
         ? payload.id
         : undefined
 
+  const sessionId =
+    typeof payload.sessionId === "string" && payload.sessionId.length > 0
+      ? payload.sessionId
+      : undefined
+
   return {
     jobId: responseJobId,
+    sessionId,
     status: payload.status,
     pollAfterMs: typeof payload.pollAfterMs === "number" ? payload.pollAfterMs : CHAT_POLL_FALLBACK_DELAY_MS,
     progress: typeof payload.progress === "string" ? payload.progress : undefined,
@@ -146,6 +157,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
   const [response, setResponse] = useState("")
   const [error, setError] = useState("")
   const [lastJobId, setLastJobId] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -154,7 +166,6 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakingTimeoutRef = useRef<number | null>(null)
   const pollControllerRef = useRef<AbortController | null>(null)
-  const isMountedRef = useRef(true)
 
   const clearSpeakingTimeout = useCallback(() => {
     if (speakingTimeoutRef.current) {
@@ -174,6 +185,17 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
     if (pollControllerRef.current) {
       pollControllerRef.current.abort()
       pollControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const storedSessionId = window.localStorage.getItem(OPENCLAW_SESSION_STORAGE_KEY)
+    if (storedSessionId) {
+      setSessionId(storedSessionId)
     }
   }, [])
 
@@ -232,7 +254,11 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
           if (!pollState.response?.text || !Array.isArray(pollState.response?.conversationHistory)) {
             throw new Error("Invalid completed job payload")
           }
-          return pollState.response
+          return {
+            text: pollState.response.text,
+            conversationHistory: pollState.response.conversationHistory,
+            sessionId: pollState.sessionId,
+          }
         }
 
         if (pollState.status === "failed" || pollState.status === "cancelled") {
@@ -295,6 +321,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: userText,
+            ...(sessionId ? { sessionId } : {}),
             conversationHistory: conversationHistoryRef.current,
           }),
         })
@@ -305,6 +332,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
         }
 
         const chatPayload = parseChatSubmitResponse(await chatResponse.json())
+        setSessionId(chatPayload.sessionId)
         setLastJobId(chatPayload.jobId)
         setState("waiting_for_response")
 
@@ -315,6 +343,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
           initialPollAfterMs: chatPayload.pollAfterMs,
         })
 
+        setSessionId(completed.sessionId || chatPayload.sessionId)
         conversationHistoryRef.current = completed.conversationHistory
         setResponse(completed.text)
         setState("speaking")
@@ -379,7 +408,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
         stopCurrentPolling()
       }
     },
-    [pollJob, stopCurrentPolling, stopMediaStream]
+    [pollJob, stopCurrentPolling, stopMediaStream, sessionId]
   )
 
   const startRecording = useCallback(async () => {
@@ -467,7 +496,6 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
 
   useEffect(() => {
     return () => {
-      isMountedRef.current = false
       stopCurrentPolling()
       stopMediaStream()
       stopPlayback()
@@ -476,6 +504,18 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
       }
     }
   }, [stopCurrentPolling, stopMediaStream, stopPlayback])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    if (sessionId) {
+      window.localStorage.setItem(OPENCLAW_SESSION_STORAGE_KEY, sessionId)
+    } else {
+      window.localStorage.removeItem(OPENCLAW_SESSION_STORAGE_KEY)
+    }
+  }, [sessionId])
 
   return {
     state,
