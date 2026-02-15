@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - "*"
   pull_request:
 
 permissions:
@@ -44,12 +44,8 @@ jobs:
       - name: Run type check
         run: pnpm exec tsc --noEmit
 
-      - name: Run lint (best-effort)
-        run: |
-          pnpm exec next lint || {
-            echo "::warning::next lint is unavailable in this version. Skipping."
-            true
-          }
+      - name: Run lint
+        run: pnpm dlx eslint@8.57.0 .
 
       - name: Build production image
         run: pnpm build
