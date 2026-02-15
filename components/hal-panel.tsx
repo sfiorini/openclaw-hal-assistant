@@ -9,7 +9,7 @@ export function HalPanel() {
     useVoiceAssistant()
 
   return (
-    <main className="relative flex min-h-svh flex-col items-center justify-center bg-background overflow-hidden">
+    <main className="relative flex min-h-svh flex-col items-center bg-background px-4 py-5 overflow-hidden">
       {/* Subtle radial vignette */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -21,7 +21,7 @@ export function HalPanel() {
       />
 
       {/* Top label */}
-      <div className="absolute top-8 flex flex-col items-center gap-2">
+      <div className="z-10 mt-1 flex flex-col items-center gap-2">
         <h1 className="font-mono text-xs tracking-[0.5em] text-muted-foreground uppercase">
           HAL 9000
         </h1>
@@ -31,23 +31,25 @@ export function HalPanel() {
         </p>
       </div>
 
-      {/* Central eye */}
-      <div className="relative z-10 flex flex-col items-center gap-10">
+      {/* Central content */}
+      <div className="relative z-10 mt-4 mb-2 flex w-full max-w-lg flex-1 min-h-0 flex-col items-center justify-start gap-4 overflow-hidden">
         <HalEye
           state={state}
           onClick={toggleRecording}
           disabled={state === "processing" || state === "speaking"}
         />
-        <HalStatus
-          state={state}
-          transcript={transcript}
-          response={response}
-          error={error}
-        />
+        <div className="w-full min-h-0 flex-1 overflow-hidden">
+          <HalStatus
+            state={state}
+            transcript={transcript}
+            response={response}
+            error={error}
+          />
+        </div>
       </div>
 
       {/* Bottom system info */}
-      <div className="absolute bottom-8 flex flex-col items-center gap-1">
+      <div className="z-10 mb-1 flex flex-col items-center gap-1">
         <p className="font-mono text-[9px] tracking-[0.3em] text-muted-foreground/40 uppercase">
           Voice-Activated Conversational Interface
         </p>

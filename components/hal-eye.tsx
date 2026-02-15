@@ -24,7 +24,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
       }
       className={cn(
         "relative flex items-center justify-center",
-        "w-48 h-48 md:w-64 md:h-64 lg:w-72 lg:h-72",
+        "w-36 h-36 md:w-48 md:h-48 lg:w-56 lg:h-56",
         "rounded-full cursor-pointer transition-all duration-300",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-hal-red focus-visible:ring-offset-4 focus-visible:ring-offset-background",
         disabled && state !== "processing" && state !== "speaking" && "opacity-50 cursor-not-allowed",
@@ -39,7 +39,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
       {/* The glowing red eye lens */}
       <div
         className={cn(
-          "absolute inset-8 md:inset-10 lg:inset-12 rounded-full transition-all duration-500",
+          "absolute inset-6 md:inset-8 lg:inset-10 rounded-full transition-all duration-500",
           "bg-gradient-radial",
           state === "idle" && "animate-hal-pulse",
           state === "recording" && "animate-hal-recording",
@@ -63,7 +63,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
 
       {/* Processing spinner overlay */}
       {(state === "processing" || state === "waiting_for_response") && (
-        <div className="absolute inset-8 md:inset-10 lg:inset-12 rounded-full">
+        <div className="absolute inset-6 md:inset-8 lg:inset-10 rounded-full">
           <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[hsl(0,100%,70%)] animate-spin" />
         </div>
       )}
