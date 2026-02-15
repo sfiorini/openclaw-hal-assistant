@@ -37,9 +37,6 @@ const createBinaryResponse = () =>
     },
   })
 
-const isApiElevenLabs = (url) =>
-  typeof url === "string" && url.includes("api.elevenlabs.io")
-
 const isOpenClawChat = (url) => typeof url === "string" && url.includes("/v1/chat/completions")
 
 const isOpenClawModels = (url) => typeof url === "string" && url.includes("/v1/models")
@@ -77,4 +74,3 @@ if (typeof globalThis.fetch === "function") {
     return originalFetch(input, init)
   }
 }
-
