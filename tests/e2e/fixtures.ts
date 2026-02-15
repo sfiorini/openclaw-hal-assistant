@@ -167,7 +167,7 @@ export const installBrowserApiMocks = async (
             if (this.onended) {
               this.onended(new Event("ended"))
             }
-          }, 20)
+          }, 350)
 
           return Promise.resolve()
         }
