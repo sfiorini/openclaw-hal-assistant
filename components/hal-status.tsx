@@ -28,9 +28,9 @@ const stateDescriptions: Record<HalState, string> = {
 
 export function HalStatus({ state, transcript, response, error }: HalStatusProps) {
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col items-stretch gap-5 px-2 sm:px-4">
+    <div className="flex h-full min-h-0 w-full flex-col items-stretch gap-5 px-2 sm:px-4">
       {/* Status indicator */}
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex shrink-0 items-center justify-center gap-3">
         <div
           className={cn(
             "w-2 h-2 rounded-full transition-colors duration-300",
@@ -47,13 +47,13 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
       </div>
 
       {/* Description */}
-      <p className="font-mono text-xs text-muted-foreground tracking-wider text-center">
+      <p className="shrink-0 font-mono text-xs text-muted-foreground tracking-wider text-center">
         {stateDescriptions[state]}
       </p>
 
       {/* Error message */}
       {error && (
-        <div className="w-full rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:px-4 sm:py-3">
+        <div className="shrink-0 w-full rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:px-4 sm:py-3">
           <p className="font-mono text-xs text-destructive text-center">{error}</p>
         </div>
       )}
@@ -61,7 +61,7 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
       {/* Transcript */}
       {(transcript || response) && (
         <div
-          className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2 overflow-hidden"
+          className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2"
           style={{ gridAutoRows: "minmax(0, 1fr)" }}
         >
           {transcript && (
