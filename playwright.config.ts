@@ -16,6 +16,18 @@ export default defineConfig({
   ],
   webServer: {
     command: "pnpm dev",
+    env: {
+      ...process.env,
+      NODE_OPTIONS:
+        `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ""}--require ./tests/e2e/fetch-mock.cjs`,
+      OPENCLAW_GATEWAY_URL: "https://gateway.example.com",
+      OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+      OPENCLAW_API_KEY: "",
+      ELEVENLABS_API_KEY: "eleven-key",
+      ELEVENLABS_VOICE_ID: "voice-id",
+      OPENCLAW_RATE_LIMIT: "2",
+      OPENCLAW_API_DOCS_ENABLED: "false",
+    },
     url: "http://127.0.0.1:3000",
     reuseExistingServer: true,
     timeout: 120_000,

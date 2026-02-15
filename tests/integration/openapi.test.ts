@@ -38,14 +38,28 @@ describe("OpenAPI and docs", () => {
       info: { title: "OpenClaw HAL", version: "1.0.0" },
       paths: {
         "/api/chat": { post: {} },
-        "/api/stt": { post: {} },
+        "/api/stt": {
+          post: {
+            requestBody: {
+              content: {
+                "multipart/form-data": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
         "/api/tts": { post: {} },
       },
     })
   })
 
   it("returns generated OpenAPI JSON when docs are enabled", async () => {
-    const response = await GET_OPENAPI(createRequest())
+    const response = await GET_OPENAPI(
+      createRequest({
+        "x-api-docs-token": "docs-token",
+      })
+    )
     const payload = await response.json()
 
     expect(response.status).toBe(200)

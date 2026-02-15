@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { getServerEnvConfig } from "../../../lib/config/env"
+import { getServerEnvConfig } from "../../../../lib/config/env"
 
 type HealthStatus = "up" | "down"
 
