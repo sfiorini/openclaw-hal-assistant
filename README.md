@@ -83,3 +83,23 @@ curl -X POST http://localhost:3000/api/tts \
 - `pnpm docker:build` – build container image
 - `pnpm docker:run` – run single container with `.env`
 - `pnpm docker:up` / `pnpm docker:down` – compose control
+- `pnpm docker:logs` – stream compose logs
+
+### Release scripts
+
+- `pnpm release:patch` – bump PATCH, commit, and tag
+- `pnpm release:minor` – bump MINOR, commit, and tag
+- `pnpm release:major` – bump MAJOR, commit, and tag
+- `pnpm release:version <x.y.z>` – bump to explicit version and tag
+
+Use `--push` to push commit and tags after local release prep:
+
+```bash
+pnpm release:patch -- --push
+```
+
+A GitHub release (tag `vX.Y.Z`) triggers `.github/workflows/docker-release.yml`,
+which validates tests and builds, then publishes Docker images to Docker Hub as:
+
+- `openclaw-hal-assistant:vX.Y.Z`
+- `openclaw-hal-assistant:latest`

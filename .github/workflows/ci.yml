@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20.x"]
+    env:
+      ELEVENLABS_API_KEY: ci-key
+      ELEVENLABS_VOICE_ID: ci-voice-id
+      OPENCLAW_GATEWAY_URL: http://localhost:3000
+      OPENCLAW_GATEWAY_TOKEN: ci-token
+      OPENCLAW_RATE_LIMIT: 100
+      OPENCLAW_AGENT_ID: main
+      OPENCLAW_CHAT_REQUEST_TIMEOUT_MS: 120000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run unit and integration tests
+        run: pnpm test -- --run tests/unit tests/integration
+
+      - name: Run type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Run lint (best-effort)
+        run: |
+          pnpm exec next lint || {
+            echo "::warning::next lint is unavailable in this version. Skipping."
+            true
+          }
+
+      - name: Build production image
+        run: pnpm build

@@ -17,6 +17,29 @@ Use provided scripts:
 - `pnpm docker:down`
 - `pnpm docker:logs`
 
+## Release
+
+### Local release commands
+
+- `pnpm release:patch` → bumps patch and creates `vX.Y.Z` commit/tag
+- `pnpm release:minor` → bumps minor and creates `vX.Y.Z` commit/tag
+- `pnpm release:version <x.y.z>` → sets an explicit version
+- `pnpm release:major` → bumps major and creates `vX.Y.Z` commit/tag
+- Add `--push` to push commit and tags (for example: `pnpm release:patch -- --push`)
+
+### GitHub release workflow
+
+Use GitHub Releases with semantic tags (`vX.Y.Z`) to trigger Docker publishing.
+
+The release workflow:
+
+1. Runs validation (`tests/unit`, `tests/integration`, `tsc`, production build).
+2. Builds and pushes Docker images to Docker Hub as:
+   - `${{ secrets.DOCKERHUB_USERNAME }}/openclaw-hal-assistant:vX.Y.Z`
+   - `${{ secrets.DOCKERHUB_USERNAME }}/openclaw-hal-assistant:latest`
+
+Runtime variables are still supplied by compose or `--env-file`, never baked into images.
+
 ### Manual docker workflow
 
 ```bash
