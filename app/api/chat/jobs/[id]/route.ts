@@ -18,7 +18,10 @@ const buildJsonResponse = (request: NextRequest, status: number, body: Record<st
     request
   )
 
-const buildTerminalResponse = (jobId: string, state: ReturnType<typeof getChatJobById>) => {
+const buildTerminalResponse = (
+  jobId: string,
+  state: NonNullable<ReturnType<typeof getChatJobById>>
+) => {
   return {
     jobId,
     status: state.status,
@@ -33,20 +36,23 @@ const buildTerminalResponse = (jobId: string, state: ReturnType<typeof getChatJo
   }
 }
 
-const buildPollingResponse = (state: ReturnType<typeof getChatJobById>) => ({
-  jobId: state.id,
-  status: state.status,
-  pollAfterMs: state.pollAfterMs ?? 1000,
-  attemptCount: state.attemptCount ?? 0,
-  progress: state.progress,
+const buildPollingResponse = (
+  state: NonNullable<ReturnType<typeof getChatJobById>>,
+  pollState: NonNullable<ReturnType<typeof readChatJobForPolling>>
+) => ({
+  jobId: pollState.jobId,
+  status: pollState.status,
+  pollAfterMs: pollState.pollAfterMs ?? 1000,
+  attemptCount: pollState.attemptCount ?? 0,
+  progress: pollState.progress,
   createdAt: state.createdAt,
-  startedAt: state.startedAt,
-  finishedAt: state.finishedAt,
-  response: state.response,
-  error: state.error,
+  startedAt: pollState.startedAt,
+  finishedAt: pollState.finishedAt,
+  response: pollState.response,
+  error: pollState.error,
 })
 
-const buildCancelledAlreadyResponse = (state: ReturnType<typeof getChatJobById>) =>
+const buildCancelledAlreadyResponse = (state: NonNullable<ReturnType<typeof getChatJobById>>) =>
   buildTerminalResponse(state.id, state)
 
 export async function OPTIONS(request: NextRequest) {
@@ -90,7 +96,7 @@ export async function GET(
   const isTerminal = ["completed", "failed", "cancelled"].includes(state.status)
   const response = isTerminal
     ? buildTerminalResponse(resolvedParams.id, state)
-    : buildPollingResponse(pollState as typeof state)
+    : buildPollingResponse(state, pollState)
 
   logger.debug(
     `[chat.get] jobId=${resolvedParams.id} status=${state.status} attempts=${response.attemptCount}`

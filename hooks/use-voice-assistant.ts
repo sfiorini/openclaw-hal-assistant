@@ -152,7 +152,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
   const streamRef = useRef<MediaStream | null>(null)
   const conversationHistoryRef = useRef<Message[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const speakingTimeoutRef = useRef<number | null>(null)
   const pollControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
 
