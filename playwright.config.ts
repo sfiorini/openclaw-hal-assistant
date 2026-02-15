@@ -29,7 +29,9 @@ export default defineConfig({
       OPENCLAW_API_DOCS_ENABLED: "false",
     },
     url: "http://127.0.0.1:3000",
-    reuseExistingServer: true,
+    // Always start a fresh test server so CI and local E2E runs use the same
+    // env values defined below (including OPENCLAW_RATE_LIMIT=2).
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 })
