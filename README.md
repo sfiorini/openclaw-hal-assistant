@@ -46,6 +46,10 @@ curl -X POST http://localhost:3000/api/chat \
   -d '{"message":"Hello HAL"}'
 ```
 
+## UI Preview
+
+![HAL 9000 interface screenshot](./docs/images/hal-ui-latest.png)
+
 ```bash
 curl -X GET http://localhost:3000/api/chat/jobs/<jobId>
 ```
