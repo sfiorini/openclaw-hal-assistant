@@ -45,7 +45,7 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Run lint
-        run: pnpm dlx eslint@8.57.0 .
+        run: pnpm dlx eslint@8.57.0 . --ext .js,.mjs,.cjs
 
       - name: Build production image
         run: pnpm build
