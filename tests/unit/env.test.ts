@@ -7,12 +7,15 @@ const requiredEnv = {
   ELEVENLABS_VOICE_ID: "voice-id",
   OPENCLAW_GATEWAY_URL: "https://gateway.example.com",
   OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+  NODE_ENV: "test",
 }
 
-const createEnv = (overrides: Record<string, string | undefined> = {}) => ({
+const createEnv = (overrides: Partial<Record<keyof NodeJS.ProcessEnv, string | undefined>> = {}) =>
+  ({
   ...requiredEnv,
   ...overrides,
-})
+    NODE_ENV: "test",
+  } as NodeJS.ProcessEnv)
 
 describe("getServerEnvConfig", () => {
   it("throws when a required variable is missing", () => {
@@ -62,6 +65,10 @@ describe("validateEnv", () => {
     )
 
     expect(result.success).toBe(false)
+    if (result.success) {
+      throw new Error("Expected validation to fail")
+    }
+
     expect(result.errors).toContain(
       "OPENCLAW_GATEWAY_URL: OPENCLAW_GATEWAY_URL must be a valid URL"
     )

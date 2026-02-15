@@ -15,7 +15,7 @@ const baseEnv = {
   OPENCLAW_GATEWAY_TOKEN: "gateway-token",
 }
 
-const writeOpenApiFixture = async (spec = { openapi: "3.0.0", paths: {} }) => {
+const writeOpenApiFixture = async (spec: Record<string, unknown> = { openapi: "3.0.0", paths: {} }) => {
   await writeFile(join(process.cwd(), "public", "openapi.json"), `${JSON.stringify(spec, null, 2)}\n`)
 }
 

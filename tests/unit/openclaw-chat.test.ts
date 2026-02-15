@@ -40,7 +40,7 @@ describe("chatWithOpenClaw", () => {
 
     server.use(
       http.post(/.*\/v1\/chat\/completions$/, async ({ request }) => {
-        capturedBody = await request.json()
+        capturedBody = (await request.json()) as Record<string, unknown>
         return HttpResponse.json({
           choices: [
             {
