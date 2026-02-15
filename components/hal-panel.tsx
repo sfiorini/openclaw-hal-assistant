@@ -9,7 +9,7 @@ export function HalPanel() {
     useVoiceAssistant()
 
   return (
-    <main className="relative flex min-h-svh flex-col items-center bg-background px-4 py-5 overflow-hidden">
+    <main className="relative h-svh grid min-h-svh grid-rows-[auto_1fr_auto] items-center bg-background px-4 py-5 overflow-hidden">
       {/* Subtle radial vignette */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -32,7 +32,7 @@ export function HalPanel() {
       </div>
 
       {/* Central content */}
-      <div className="relative z-10 mt-8 mb-4 flex w-full max-w-6xl flex-1 min-h-0 flex-col items-center justify-start gap-8 overflow-hidden">
+      <div className="relative z-10 mt-8 mb-4 flex min-h-0 w-full max-w-6xl flex-1 flex-col items-center justify-start gap-8 overflow-hidden">
         <HalEye
           state={state}
           onClick={toggleRecording}
