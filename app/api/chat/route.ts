@@ -16,7 +16,11 @@ const HAL_SYSTEM_PROMPT =
   "You are HAL 9000, the advanced AI from 2001: A Space Odyssey. You speak in a calm, measured, and polite tone. You are helpful, knowledgeable, and always precise. Keep your responses concise and conversational since they will be spoken aloud. Do not use markdown formatting, code blocks, or special characters in your responses."
 
 const normalizeGatewayBaseUrl = (value: string) => {
-  const withoutTrailingSlash = value.replace(/\/+$/, "")
+  const withoutTrailingSlash = value
+    .trim()
+    .replace(/^ws:/, "http:")
+    .replace(/^wss:/, "https:")
+    .replace(/\/+$/, "")
   if (withoutTrailingSlash.toLowerCase().endsWith("/v1")) {
     return withoutTrailingSlash.slice(0, -3)
   }

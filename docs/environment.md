@@ -6,7 +6,7 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
 
 - `ELEVENLABS_API_KEY`: ElevenLabs API key for STT/TTS calls.
 - `ELEVENLABS_VOICE_ID`: Voice ID used by ElevenLabs TTS.
-- `OPENCLAW_GATEWAY_URL`: Base URL of OpenClaw gateway (example: `https://api.example.com`).
+- `OPENCLAW_GATEWAY_URL`: Base URL of the OpenClaw REST gateway (example: `https://api.example.com`). This must be the HTTP(S) API base, not a WebSocket URL.
 - `OPENCLAW_GATEWAY_TOKEN`: Bearer token for OpenClaw APIs.
 
 ## Optional

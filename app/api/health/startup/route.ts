@@ -20,7 +20,11 @@ type StartupHealthPayload = {
 }
 
 const normalizeGatewayBaseUrl = (value: string) => {
-  const withoutTrailingSlash = value.replace(/\/+$/, "")
+  const withoutTrailingSlash = value
+    .trim()
+    .replace(/^ws:/, "http:")
+    .replace(/^wss:/, "https:")
+    .replace(/\/+$/, "")
   if (withoutTrailingSlash.toLowerCase().endsWith("/v1")) {
     return withoutTrailingSlash.slice(0, -3)
   }
