@@ -37,9 +37,11 @@ describe("chatWithOpenClaw", () => {
 
   it("forwards session identifiers to upstream gateway payload", async () => {
     let capturedBody: Record<string, unknown> = {}
+    let capturedSessionHeader: string | null = null
 
     server.use(
       http.post(/.*\/v1\/chat\/completions$/, async ({ request }) => {
+        capturedSessionHeader = request.headers.get("x-openclaw-session-key")
         capturedBody = (await request.json()) as Record<string, unknown>
         return HttpResponse.json({
           choices: [
@@ -63,11 +65,9 @@ describe("chatWithOpenClaw", () => {
       sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
     })
 
+    expect(capturedSessionHeader).toBe("f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2")
     expect(capturedBody).toMatchObject({
-      session: {
-        id: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      },
-      session_id: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      user: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
     })
   })
 

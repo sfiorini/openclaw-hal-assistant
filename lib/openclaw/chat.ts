@@ -102,6 +102,8 @@ export const chatWithOpenClaw = async (
   const chatUrl = buildGatewayUrl(params.gatewayUrl, "/chat/completions")
 
   try {
+    const sessionKey = params.sessionId
+
     const response = await withTimeout(
       (signal) =>
         fetch(chatUrl, {
@@ -109,6 +111,9 @@ export const chatWithOpenClaw = async (
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${params.gatewayToken}`,
+            ...(sessionKey
+              ? { "x-openclaw-session-key": sessionKey }
+              : {}),
           },
           body: JSON.stringify({
             model: params.agentId,
@@ -117,8 +122,7 @@ export const chatWithOpenClaw = async (
             max_tokens: 500,
             ...(params.sessionId
               ? {
-                  session: { id: params.sessionId },
-                  session_id: params.sessionId,
+                  user: sessionKey,
                 }
               : {}),
           }),

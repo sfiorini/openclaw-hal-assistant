@@ -199,6 +199,18 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
     }
   }, [])
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    if (sessionId) {
+      window.localStorage.setItem(OPENCLAW_SESSION_STORAGE_KEY, sessionId)
+    } else {
+      window.localStorage.removeItem(OPENCLAW_SESSION_STORAGE_KEY)
+    }
+  }, [sessionId])
+
   const cancelCurrentJob = useCallback(async () => {
     if (!lastJobId) {
       return
