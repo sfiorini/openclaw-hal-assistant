@@ -28,6 +28,43 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
   const conversationHistoryRef = useRef<Message[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  const readApiErrorMessage = useCallback(async (response: Response, fallbackMessage: string) => {
+    const contentType = response.headers.get("content-type") || ""
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = await response.json()
+        if (payload && typeof payload === "object") {
+          if (typeof payload.error === "string") {
+            return payload.error
+          }
+          if (typeof (payload as { message?: unknown }).message === "string") {
+            return (payload as { message: string }).message
+          }
+          if (
+            typeof (payload as { upstream?: unknown }).upstream === "object" &&
+            (payload as { upstream: { message?: unknown } }).upstream?.message &&
+            typeof (payload as { upstream: { message: unknown } }).upstream.message === "string"
+          ) {
+            return `${(payload as { upstream: { message: string } }).upstream.message} (${response.status})`
+          }
+        }
+      } catch {
+        // fall through to plain text extraction
+      }
+    }
+
+    try {
+      const body = await response.text()
+      if (body.trim()) {
+        return `${body.trim()} (${response.status})`
+      }
+    } catch {
+      // ignore extraction failures
+    }
+
+    return `${fallbackMessage} (${response.status})`
+  }, [])
+
   const stopMediaStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
@@ -73,14 +110,21 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
       })
 
       if (!chatResponse.ok) {
-        const chatError = await chatResponse.json()
-        throw new Error(chatError.error || "Chat completion failed")
+        const chatErrorMessage = await readApiErrorMessage(chatResponse, "Chat completion failed")
+        throw new Error(chatErrorMessage)
       }
 
-      const { text: assistantText, conversationHistory } =
-        await chatResponse.json()
+      const chatPayload = await chatResponse.json()
+      const assistantText = (chatPayload as { text?: unknown }).text
+      const conversationHistory = (chatPayload as {
+        conversationHistory?: unknown
+      }).conversationHistory
 
-      conversationHistoryRef.current = conversationHistory
+      if (typeof assistantText !== "string" || !Array.isArray(conversationHistory)) {
+        throw new Error("Invalid chat response format")
+      }
+
+      conversationHistoryRef.current = conversationHistory as Message[]
       setResponse(assistantText)
 
       // Step 3: Text-to-Speech

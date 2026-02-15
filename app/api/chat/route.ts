@@ -17,6 +17,10 @@ const HAL_SYSTEM_PROMPT =
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
 
+const maxErrorTextLength = 1000
+const trimErrorText = (value: string) =>
+  value.length <= maxErrorTextLength ? value : `${value.slice(0, maxErrorTextLength)}...`
+
 const buildErrorResponse = (request: NextRequest, status: number, body: Record<string, unknown>) =>
   applyCorsHeaders(
     NextResponse.json(body, {
@@ -100,7 +104,13 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text()
       logger.error(`OpenClaw gateway error: ${errorText}`)
-      return buildErrorResponse(request, 502, { error: "Chat completion failed" })
+      return buildErrorResponse(request, 502, {
+        error: "Chat completion failed",
+        upstream: {
+          status: response.status,
+          message: trimErrorText(errorText || "No error details provided"),
+        },
+      })
     }
 
     const data = await response.json()
