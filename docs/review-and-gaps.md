@@ -2,7 +2,8 @@
 
 ## Reviewed Scope
 
-- Task 0–9 implementation items from the openclaw hal plan are completed.
+- Task 0–11 implementation items from the openclaw hal plan are completed.
+  - Task 10 (package metadata) and Task 11 (E2E tests) were completed alongside earlier tasks.
 - Remaining deferred items:
   - CI/CD pipeline
   - monitoring/metrics endpoint

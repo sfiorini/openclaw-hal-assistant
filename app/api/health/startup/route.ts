@@ -53,10 +53,11 @@ const checkDependency = async (
     return {
       status: "down",
       latencyMs: 0,
-      error: (error as Error).message,
+      error: error instanceof Error ? error.message : "Unknown error",
     }
   }
 }
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
 
 export async function GET() {
   let env
@@ -65,7 +66,7 @@ export async function GET() {
     env = getServerEnvConfig()
   } catch (error) {
     return NextResponse.json(
-      { status: "degraded", timestamp: new Date().toISOString(), error: (error as Error).message },
+      { status: "degraded", timestamp: new Date().toISOString(), error: getErrorMessage(error) },
       { status: 500 }
     )
   }

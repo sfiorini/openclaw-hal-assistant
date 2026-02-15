@@ -15,7 +15,8 @@ RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN pnpm build
+RUN pnpm exec next build && pnpm exec node scripts/generate-openapi.mjs \
+  && rm -f .next/standalone/.env
 
 FROM node:20-alpine AS runner
 WORKDIR /app

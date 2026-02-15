@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { getServerEnvConfig } from "../../../lib/config/env"
 
 const SPEC_PATH = join(process.cwd(), "public", "openapi.json")
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
 
 export async function GET(request: NextRequest) {
   let env
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     env = getServerEnvConfig()
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 
   if (!env.OPENCLAW_API_DOCS_ENABLED) {
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(spec)
   } catch (error) {
     return NextResponse.json(
-      { error: `Failed to load OpenAPI spec: ${(error as Error).message}` },
+      { error: `Failed to load OpenAPI spec: ${getErrorMessage(error)}` },
       { status: 500 }
     )
   }

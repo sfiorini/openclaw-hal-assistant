@@ -1,4 +1,43 @@
 import { z } from "zod"
+import { existsSync, readFileSync } from "node:fs"
+import { resolve } from "node:path"
+
+const loadEnvFile = (filename = ".env") => {
+  const envPath = resolve(process.cwd(), filename)
+  if (!existsSync(envPath)) {
+    return
+  }
+
+  const lines = readFileSync(envPath, "utf8").split(/\r?\n/)
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim()
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue
+    }
+
+    const delimiterIndex = trimmed.indexOf("=")
+    if (delimiterIndex <= 0) {
+      continue
+    }
+
+    const key = trimmed.slice(0, delimiterIndex).trim()
+    let value = trimmed.slice(delimiterIndex + 1).trim()
+
+    if (
+      (value.startsWith(`"`) && value.endsWith(`"`)) ||
+      (value.startsWith(`'`) && value.endsWith(`'`))
+    ) {
+      value = value.slice(1, -1)
+    }
+
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
+}
+
+loadEnvFile()
 
 const parseBoolean = (value) => {
   if (value === undefined || value === "") {

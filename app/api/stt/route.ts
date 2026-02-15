@@ -11,6 +11,8 @@ import { getServerEnvConfig } from "../../../lib/config/env"
 
 const logger = createLogger()
 
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
+
 const buildErrorResponse = (request: NextRequest, status: number, body: Record<string, unknown>) =>
   applyCorsHeaders(
     NextResponse.json(body, {
@@ -29,11 +31,7 @@ export async function POST(request: NextRequest) {
   try {
     env = getServerEnvConfig()
   } catch (error) {
-    return buildErrorResponse(
-      request,
-      500,
-      { error: (error as Error).message }
-    )
+    return buildErrorResponse(request, 500, { error: getErrorMessage(error) })
   }
 
   const authResponse = await withApiKeyAuth(request, {
@@ -64,7 +62,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    logger.error(`STT request validation error: ${(error as Error).message}`)
+    logger.error(`STT request validation error: ${getErrorMessage(error)}`)
     return buildErrorResponse(request, 400, { error: "Invalid request" })
   }
 
@@ -97,7 +95,7 @@ export async function POST(request: NextRequest) {
     try {
       output = sttResponseSchema.parse({ text: data.text })
     } catch (error) {
-      logger.error(`STT response validation error: ${(error as Error).message}`)
+      logger.error(`STT response validation error: ${getErrorMessage(error)}`)
       return buildErrorResponse(request, 502, {
         error: "Invalid response from speech-to-text service",
       })
@@ -106,11 +104,11 @@ export async function POST(request: NextRequest) {
     return buildErrorResponse(request, 200, output)
   } catch (error) {
     if (isTimeoutError(error)) {
-      logger.error(`STT request timed out: ${error.message}`)
+      logger.error(`STT request timed out: ${getErrorMessage(error)}`)
       return buildErrorResponse(request, 504, { error: "Speech-to-text conversion timed out" })
     }
 
-    logger.error(`STT route error: ${(error as Error).message}`)
+    logger.error(`STT route error: ${getErrorMessage(error)}`)
     return buildErrorResponse(request, 500, {
       error: "Internal server error",
     })

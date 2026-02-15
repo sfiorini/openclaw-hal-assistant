@@ -46,3 +46,6 @@ __v0_jsx-dev-runtime.ts
 
 # Local planning workspace
 /ai_plan/
+
+# Local test files
+/test-results/

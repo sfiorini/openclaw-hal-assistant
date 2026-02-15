@@ -26,4 +26,4 @@ Copy and edit:
 cp .env.example .env
 ```
 
-`verify:env` validates required variables before build/start.
+`verify:env` loads `.env` (if present) and validates required variables before build/start.

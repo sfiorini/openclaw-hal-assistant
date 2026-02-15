@@ -15,6 +15,8 @@ const FALLBACK_TEXT = "I'm sorry, I could not generate a response."
 const HAL_SYSTEM_PROMPT =
   "You are HAL 9000, the advanced AI from 2001: A Space Odyssey. You speak in a calm, measured, and polite tone. You are helpful, knowledgeable, and always precise. Keep your responses concise and conversational since they will be spoken aloud. Do not use markdown formatting, code blocks, or special characters in your responses."
 
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
+
 const buildErrorResponse = (request: NextRequest, status: number, body: Record<string, unknown>) =>
   applyCorsHeaders(
     NextResponse.json(body, {
@@ -33,11 +35,7 @@ export async function POST(request: NextRequest) {
   try {
     env = getServerEnvConfig()
   } catch (error) {
-    return buildErrorResponse(
-      request,
-      500,
-      { error: (error as Error).message }
-    )
+    return buildErrorResponse(request, 500, { error: getErrorMessage(error) })
   }
 
   const authResponse = await withApiKeyAuth(request, {
@@ -66,7 +64,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    logger.error(`Chat request validation error: ${(error as Error).message}`)
+    logger.error(`Chat request validation error: ${getErrorMessage(error)}`)
     return buildErrorResponse(request, 400, { error: "Invalid request" })
   }
 
@@ -122,7 +120,7 @@ export async function POST(request: NextRequest) {
         ],
       })
     } catch (error) {
-      logger.error(`Chat response validation error: ${(error as Error).message}`)
+      logger.error(`Chat response validation error: ${getErrorMessage(error)}`)
       return buildErrorResponse(request, 502, {
         error: "Invalid response from chat service",
       })
@@ -131,11 +129,11 @@ export async function POST(request: NextRequest) {
     return buildErrorResponse(request, 200, output)
   } catch (error) {
     if (isTimeoutError(error)) {
-      logger.error(`Chat request timed out: ${error.message}`)
+      logger.error(`Chat request timed out: ${getErrorMessage(error)}`)
       return buildErrorResponse(request, 504, { error: "Chat completion timed out" })
     }
 
-    logger.error(`Chat route error: ${(error as Error).message}`)
+    logger.error(`Chat route error: ${getErrorMessage(error)}`)
     return buildErrorResponse(request, 500, {
       error: "Internal server error",
     })
