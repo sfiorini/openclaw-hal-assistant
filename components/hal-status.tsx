@@ -60,9 +60,9 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
 
       {/* Transcript */}
       {(transcript || response) && (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
           {transcript && (
-            <div className="min-h-0 flex min-w-0 flex-1 flex-col rounded-md border border-border bg-card px-3 py-2 sm:px-4 sm:py-3">
+            <div className="min-h-0 flex h-full min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card px-3 py-2 sm:px-4 sm:py-3">
               <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
                 You said:
               </p>
@@ -75,7 +75,7 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
           )}
 
           {response && (
-            <div className="min-h-0 flex min-w-0 flex-1 flex-col rounded-md border border-hal-red/20 bg-hal-red/5 px-3 py-2 sm:px-4 sm:py-3">
+            <div className="min-h-0 flex h-full min-w-0 flex-col overflow-hidden rounded-md border border-hal-red/20 bg-hal-red/5 px-3 py-2 sm:px-4 sm:py-3">
               <p className="font-mono text-[10px] text-hal-red/70 uppercase tracking-wider">
                 HAL 9000:
               </p>
