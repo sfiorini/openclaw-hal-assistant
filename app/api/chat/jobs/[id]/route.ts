@@ -24,6 +24,7 @@ const buildTerminalResponse = (
 ) => {
   return {
     jobId,
+    sessionId: state.sessionId,
     status: state.status,
     createdAt: state.createdAt,
     pollAfterMs: 0,
@@ -41,6 +42,7 @@ const buildPollingResponse = (
   pollState: NonNullable<ReturnType<typeof readChatJobForPolling>>
 ) => ({
   jobId: pollState.jobId,
+  sessionId: pollState.sessionId,
   status: pollState.status,
   pollAfterMs: pollState.pollAfterMs ?? 1000,
   attemptCount: pollState.attemptCount ?? 0,
@@ -150,13 +152,14 @@ export async function DELETE(
     return buildJsonResponse(request, 404, { error: "Job not found" })
   }
 
-  return buildJsonResponse(request, 200, {
-    jobId: cancelled.id,
-    status: "cancelled",
-    pollAfterMs: 0,
-    createdAt: cancelled.createdAt,
-    attemptCount: cancelled.attemptCount ?? 0,
-    progress: cancelled.progress,
+    return buildJsonResponse(request, 200, {
+      jobId: cancelled.id,
+      sessionId: cancelled.sessionId,
+      status: "cancelled",
+      pollAfterMs: 0,
+      createdAt: cancelled.createdAt,
+      attemptCount: cancelled.attemptCount ?? 0,
+      progress: cancelled.progress,
     finishedAt: cancelled.finishedAt,
     error: cancelled.error,
   })

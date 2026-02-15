@@ -35,6 +35,42 @@ describe("chatWithOpenClaw", () => {
     expect(result.conversationHistory.at(-1)?.content).toBe("Mapped response")
   })
 
+  it("forwards session identifiers to upstream gateway payload", async () => {
+    let capturedBody: Record<string, unknown> = {}
+
+    server.use(
+      http.post(/.*\/v1\/chat\/completions$/, async ({ request }) => {
+        capturedBody = await request.json()
+        return HttpResponse.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "Mapped response",
+              },
+            },
+          ],
+        })
+      })
+    )
+
+    await chatWithOpenClaw({
+      message: "hello",
+      conversationHistory: [{ role: "user", content: "context" }],
+      gatewayUrl: "https://gateway.example.com",
+      gatewayToken: "token",
+      agentId: "agent-id",
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+    })
+
+    expect(capturedBody).toMatchObject({
+      session: {
+        id: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      },
+      session_id: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+    })
+  })
+
   it("throws a classified error on upstream status failure", async () => {
     server.use(
       http.post(/.*\/v1\/chat\/completions$/, () =>

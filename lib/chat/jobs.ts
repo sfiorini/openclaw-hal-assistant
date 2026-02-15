@@ -1,4 +1,5 @@
 import { createLogger } from "../middleware/logger"
+import { releaseSessionJobSlot } from "./sessions"
 
 type ChatJobProgress =
   | "accepted"
@@ -39,6 +40,7 @@ export type ChatJobResponse = {
 
 export type ChatJob = {
   id: string
+  sessionId: string
   status: ChatJobStatus
   createdAt: string
   updatedAt: string
@@ -49,6 +51,7 @@ export type ChatJob = {
     message: string
     conversationHistory: ChatMessage[]
     idempotencyKey?: string
+    sessionId: string
   }
   response?: ChatJobResponse
   error?: ChatJobError
@@ -61,10 +64,12 @@ type ChatJobInput = {
   message: string
   conversationHistory: ChatMessage[]
   idempotencyKey?: string
+  sessionId: string
 }
 
 type PollResponse = {
   jobId: string
+  sessionId: string
   status: ChatJobStatus
   pollAfterMs: number
   attemptCount: number
@@ -239,6 +244,9 @@ const cleanupExpiredJobs = () => {
   for (const [jobId, job] of jobStore.entries()) {
     if (isExpired(job.expiresAt, currentTime)) {
       jobStore.delete(jobId)
+      if (job.status === "queued" || job.status === "running") {
+        void releaseSessionJobSlot(job.sessionId, job.id)
+      }
       removedCount += 1
       createStoreEvent(job, "chat_job_cleaned")
     }
@@ -285,6 +293,20 @@ export const __setIdempotencyStoreForTesting = (key: string, record: Idempotency
   idempotencyStore.set(key, record)
 }
 
+export const getChatJobByIdempotencyKey = (idempotencyKey: string) => {
+  const record = idempotencyStore.get(idempotencyKey)
+  if (!record) {
+    return undefined
+  }
+
+  const job = jobStore.get(record.jobId)
+  if (!job) {
+    return undefined
+  }
+
+  return clone(job)
+}
+
 export const getChatJobById = (id: string): ChatJob | undefined => {
   const job = jobStore.get(id)
   return job ? clone(job) : undefined
@@ -328,6 +350,7 @@ export const createChatJob = (input: ChatJobInput): ChatJob => {
 
   const job: ChatJob = {
     id,
+    sessionId: input.sessionId,
     status: "queued",
     createdAt,
     updatedAt: createdAt,
@@ -336,6 +359,7 @@ export const createChatJob = (input: ChatJobInput): ChatJob => {
     request: {
       message: normalizedMessage,
       conversationHistory: normalizedHistory,
+      sessionId: input.sessionId,
       ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     },
     progress: "accepted",
@@ -412,6 +436,9 @@ export const markChatJobFinalized = (
   } else {
     createStoreEvent(updated, "chat_job_cancelled", requestId)
   }
+  if (current.status === "queued" || current.status === "running") {
+    void releaseSessionJobSlot(current.sessionId, id)
+  }
 
   return clone(updated)
 }
@@ -438,6 +465,7 @@ export const setChatJobPollProgress = (id: string): PollResponse | undefined => 
   if (["completed", "failed", "cancelled"].includes(current.status)) {
     return {
       jobId: current.id,
+      sessionId: current.sessionId,
       status: current.status,
       pollAfterMs: 0,
       attemptCount: current.attemptCount ?? 0,
@@ -460,6 +488,7 @@ export const setChatJobPollProgress = (id: string): PollResponse | undefined => 
 
   return {
     jobId: updated.id,
+    sessionId: updated.sessionId,
     status: updated.status,
     pollAfterMs: updated.pollAfterMs,
     attemptCount,
@@ -473,8 +502,14 @@ export const setChatJobPollProgress = (id: string): PollResponse | undefined => 
 
 export const cancelChatJob = (id: string): ChatJob | undefined => {
   const current = jobStore.get(id)
-  if (!current || current.status === "completed" || current.status === "failed") {
+  if (!current) {
     return undefined
+  }
+  if (current.status === "completed" || current.status === "failed") {
+    return undefined
+  }
+  if (current.status === "cancelled") {
+    return clone(current)
   }
 
   const updated = applyUpdate(current, {
@@ -489,6 +524,7 @@ export const cancelChatJob = (id: string): ChatJob | undefined => {
 
   jobStore.set(id, updated)
   createStoreEvent(updated, "chat_job_cancelled")
+  void releaseSessionJobSlot(current.sessionId, id)
   return clone(updated)
 }
 

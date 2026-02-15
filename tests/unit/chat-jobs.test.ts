@@ -21,11 +21,13 @@ describe("Chat job repository", () => {
     const first = createChatJob({
       message: "Hello",
       conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       idempotencyKey: "same-key",
     })
     const second = createChatJob({
       message: "Hello",
       conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       idempotencyKey: "same-key",
     })
 
@@ -36,6 +38,7 @@ describe("Chat job repository", () => {
     const created = createChatJob({
       message: "Hello",
       conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
     })
 
     const firstPoll = readChatJobForPolling(created.id)
@@ -59,6 +62,7 @@ describe("Chat job repository", () => {
     const created = createChatJob({
       message: "cancel",
       conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
     })
 
     const cancelled = cancelChatJob(created.id)
@@ -70,6 +74,7 @@ describe("Chat job repository", () => {
     const created = createChatJob({
       message: "stale",
       conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
     })
 
     __setJobExpirationForTesting(created.id, new Date(Date.now() - 1000).toISOString())
@@ -80,8 +85,16 @@ describe("Chat job repository", () => {
   })
 
   it("returns jobs for debug listing", () => {
-    createChatJob({ message: "one", conversationHistory: [] })
-    createChatJob({ message: "two", conversationHistory: [] })
+    createChatJob({
+      message: "one",
+      conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+    })
+    createChatJob({
+      message: "one",
+      conversationHistory: [],
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+    })
 
     const listed = listChatJobs(10)
     expect(listed.length).toBeGreaterThanOrEqual(2)

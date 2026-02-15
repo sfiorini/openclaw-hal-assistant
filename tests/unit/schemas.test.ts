@@ -9,6 +9,7 @@ import {
   chatJobStatusSchema,
   chatResponseSchema,
 } from "../../lib/schemas/chat.schema"
+import { parseChatSessionCommand } from "../../lib/chat/schemas/session.schema"
 import { sttRequestSchema, sttResponseSchema } from "../../lib/schemas/stt.schema"
 import {
   ttsRequestSchema,
@@ -103,6 +104,7 @@ describe("schema validations", () => {
 
   it("validates chat job submission response", () => {
     const payload = {
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       status: "queued",
       pollAfterMs: 500,
@@ -115,6 +117,7 @@ describe("schema validations", () => {
 
   it("validates chat job terminal status schema", () => {
     const payload = {
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       status: "completed",
       pollAfterMs: 0,
@@ -134,6 +137,7 @@ describe("schema validations", () => {
 
   it("validates chat job status union schema", () => {
     const queued = chatJobStatusSchema.parse({
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       status: "queued",
       pollAfterMs: 500,
@@ -144,6 +148,7 @@ describe("schema validations", () => {
     expect(["queued", "running", "completed", "failed", "cancelled"]).toContain(queued.status)
 
     const failed = chatJobStatusSchema.parse({
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       status: "failed",
       pollAfterMs: 0,
@@ -156,5 +161,20 @@ describe("schema validations", () => {
     })
 
     expect(failed.status).toBe("failed")
+  })
+
+  it("parses session reset command syntax", () => {
+    const newMessage = parseChatSessionCommand("/new hello HAL")
+    expect(newMessage.newSession).toBe(true)
+    expect(newMessage.command).toBe("/new")
+    expect(newMessage.message).toBe("hello HAL")
+
+    const resetMessage = parseChatSessionCommand("  /reset  ")
+    expect(resetMessage.newSession).toBe(true)
+    expect(resetMessage.message).toBe("")
+
+    const unknownCase = parseChatSessionCommand("/NEW hello")
+    expect(unknownCase.newSession).toBe(false)
+    expect(unknownCase.message).toBe("/NEW hello")
   })
 })

@@ -86,6 +86,7 @@ export const chatWithOpenClaw = async (
     gatewayUrl: string
     gatewayToken: string
     agentId: string
+    sessionId?: string
   },
   timeoutMs = 120_000
 ): Promise<ChatJobResponse> => {
@@ -114,6 +115,12 @@ export const chatWithOpenClaw = async (
             messages,
             temperature: 0.7,
             max_tokens: 500,
+            ...(params.sessionId
+              ? {
+                  session: { id: params.sessionId },
+                  session_id: params.sessionId,
+                }
+              : {}),
           }),
           signal,
         }),

@@ -3,6 +3,8 @@ import { z } from "zod"
 
 import type { ChatJobErrorCode, ChatJobStatus } from "@/lib/chat/jobs"
 
+import { chatSessionIdSchema } from "@/lib/chat/schemas/session.schema"
+
 const chatRoleSchema = z
   .enum(["user", "assistant"], {
     invalid_type_error: "role must be a string",
@@ -36,8 +38,10 @@ export const chatRequestSchema = z
         required_error: "message is required",
       })
       .trim()
-      .min(1, "message is required")
+      .min(0, "message is required")
       .max(4000, "message must not exceed 4000 characters"),
+    sessionId: chatSessionIdSchema.optional(),
+    newSession: z.boolean().optional().default(false),
     conversationHistory: z
       .array(chatMessageSchema, {
         required_error: "conversationHistory must be an array",
@@ -119,8 +123,10 @@ export const chatJobRequestSchema = z
         required_error: "message is required",
       })
       .trim()
-      .min(1, "message is required")
+      .min(0, "message is required")
       .max(4000, "message must not exceed 4000 characters"),
+    sessionId: chatSessionIdSchema.optional(),
+    newSession: z.boolean().optional().default(false),
     conversationHistory: z
       .array(chatMessageSchema, {
         required_error: "conversationHistory must be an array",
@@ -135,6 +141,7 @@ export const chatJobRequestSchema = z
 
 export const chatJobSubmissionResponseSchema = z
   .object({
+    sessionId: chatSessionIdSchema,
     jobId: z.string().uuid("jobId must be a valid UUID"),
     status: z
       .enum(["queued"] as const)
@@ -152,6 +159,7 @@ export const chatJobSubmissionResponseSchema = z
 
 export const chatJobBaseResponseSchema = z
   .object({
+    sessionId: chatSessionIdSchema,
     jobId: z.string().uuid("jobId must be a valid UUID"),
     status: z.enum([
       "queued",

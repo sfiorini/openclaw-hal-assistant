@@ -5,6 +5,7 @@ import { http, HttpResponse } from "msw"
 import { OPTIONS, POST } from "../../app/api/chat/route"
 import { GET, DELETE } from "../../app/api/chat/jobs/[id]/route"
 import { __resetChatJobsForTests } from "../../lib/chat/jobs"
+import { __resetChatSessionsForTests } from "../../lib/chat/sessions"
 import { server } from "../mocks/server"
 
 const baseEnv = {
@@ -101,6 +102,7 @@ describe("Chat async job routes", () => {
   beforeEach(() => {
     setEnv()
     __resetChatJobsForTests()
+    __resetChatSessionsForTests()
   })
 
   it("returns async job submission metadata", async () => {
@@ -109,6 +111,9 @@ describe("Chat async job routes", () => {
 
     expect(response.status).toBe(202)
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://app.local")
+    expect(payload.sessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    )
     expect(payload.status).toBe("queued")
     expect(typeof payload.jobId).toBe("string")
     expect(payload.jobId).toMatch(
@@ -128,6 +133,78 @@ describe("Chat async job routes", () => {
     const firstPayload = await first.json()
     const secondPayload = await second.json()
     expect(secondPayload.jobId).toBe(firstPayload.jobId)
+    expect(secondPayload.sessionId).toBe(firstPayload.sessionId)
+  })
+
+  it("reuses session by default when sessionId is provided", async () => {
+    const first = await POST(createChatRequest({ message: "Hello" }))
+    const firstPayload = await first.json()
+    await waitForTerminal(firstPayload.jobId)
+
+    const second = await POST(
+      createChatRequest({
+        message: "Tell me more",
+        sessionId: firstPayload.sessionId,
+      })
+    )
+    const secondPayload = await second.json()
+
+    expect(second.status).toBe(202)
+    expect(secondPayload.sessionId).toBe(firstPayload.sessionId)
+  })
+
+  it("starts a new session for reset command", async () => {
+    const first = await POST(createChatRequest({ message: "Hello" }))
+    const firstPayload = await first.json()
+
+    const second = await POST(createChatRequest({ message: "/reset check", sessionId: firstPayload.sessionId }))
+    const secondPayload = await second.json()
+
+    expect(second.status).toBe(202)
+    expect(secondPayload.sessionId).not.toBe(firstPayload.sessionId)
+  })
+
+  it("starts a new session for `/new` command while preserving remainder text", async () => {
+    const first = await POST(createChatRequest({ message: "Hello there" }))
+    const firstPayload = await first.json()
+
+    const second = await POST(
+      createChatRequest({ message: "/new tell me a joke", sessionId: firstPayload.sessionId })
+    )
+    const secondPayload = await second.json()
+
+    expect(second.status).toBe(202)
+    expect(secondPayload.sessionId).not.toBe(firstPayload.sessionId)
+  })
+
+  it("prefers new session request over provided sessionId", async () => {
+    const knownSession = "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2"
+    const first = await POST(createChatRequest({ message: "Hello" }))
+    const firstPayload = await first.json()
+
+    const second = await POST(
+      createChatRequest({ message: "Start over", sessionId: knownSession, newSession: true })
+    )
+    const secondPayload = await second.json()
+
+    expect(second.status).toBe(202)
+    expect(secondPayload.sessionId).not.toBe(knownSession)
+    expect(secondPayload.sessionId).not.toBe(firstPayload.sessionId)
+  })
+
+  it("creates a new session when a provided sessionId is unknown", async () => {
+    const requestedSessionId = "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2"
+    const response = await POST(
+      createChatRequest({
+        message: "Hello from scratch",
+        sessionId: requestedSessionId,
+        conversationHistory: [{ role: "user", content: "older context" }],
+      })
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(202)
+    expect(payload.sessionId).not.toBe(requestedSessionId)
   })
 
   it("returns failed state when upstream chat endpoint fails", async () => {
@@ -143,6 +220,7 @@ describe("Chat async job routes", () => {
 
     const terminalStatus = await waitForTerminal(payload.jobId)
     expect(terminalStatus.status).toBe("failed")
+    expect(terminalStatus.sessionId).toBe(payload.sessionId)
     expect(terminalStatus.error).toBeDefined()
     expect(terminalStatus.error.code).toBe("upstream_error")
   })
@@ -201,6 +279,41 @@ describe("Chat async job routes", () => {
     expect(secondCancel.status).toBe(200)
     const secondPayload = await secondCancel.json()
     expect(secondPayload.status).toBe("cancelled")
+  })
+
+  it("returns 503 when the same session exceeds max concurrent jobs", async () => {
+    server.use(
+      http.post(/.*\/v1\/chat\/completions$/, async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 200)
+        })
+        return HttpResponse.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "I am thinking ...",
+              },
+            },
+          ],
+        })
+      })
+    )
+
+    const first = await POST(createChatRequest({ message: "First ask" }))
+    const firstPayload = await first.json()
+    expect(first.status).toBe(202)
+
+    const second = await POST(
+      createChatRequest({
+        message: "Second ask",
+        sessionId: firstPayload.sessionId,
+      })
+    )
+    const secondPayload = await second.json()
+
+    expect(second.status).toBe(503)
+    expect(secondPayload.code).toBe("concurrency_error")
   })
 
   it("returns preflight CORS response", async () => {

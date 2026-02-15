@@ -76,7 +76,7 @@ const resolveSpec = () => ({
           },
         ],
         responses: {
-        "200": {
+          "200": {
             description: "Job cancelled",
             content: {
               "application/json": {
@@ -96,7 +96,6 @@ const resolveSpec = () => ({
             },
           },
           "404": { description: "Job not found" },
-          "409": { description: "Terminal job cannot be cancelled" },
         },
       },
     },
@@ -239,6 +238,16 @@ const resolveSpec = () => ({
         required: ["message"],
         properties: {
           message: { type: "string", maxLength: 4000 },
+          sessionId: {
+            type: "string",
+            format: "uuid",
+            description: "Optional existing session identifier for continuity.",
+          },
+          newSession: {
+            type: "boolean",
+            description:
+              "When true, the request always starts a new session and ignores any supplied conversation history.",
+          },
           conversationHistory: {
             type: "array",
             maxItems: 20,
@@ -248,9 +257,10 @@ const resolveSpec = () => ({
       },
       ChatJobSubmissionResponse: {
         type: "object",
-        required: ["jobId", "status", "pollAfterMs", "maxPollAttempts", "maxWaitMs"],
+        required: ["jobId", "status", "sessionId", "pollAfterMs", "maxPollAttempts", "maxWaitMs"],
         properties: {
           jobId: { type: "string", format: "uuid" },
+          sessionId: { type: "string", format: "uuid" },
           status: { type: "string", enum: ["queued"] },
           pollAfterMs: { type: "integer", minimum: 0 },
           maxPollAttempts: { type: "integer", minimum: 1 },
@@ -271,9 +281,10 @@ const resolveSpec = () => ({
       },
       ChatJobBase: {
         type: "object",
-        required: ["jobId", "status", "pollAfterMs", "createdAt"],
+        required: ["jobId", "status", "pollAfterMs", "createdAt", "sessionId"],
         properties: {
           jobId: { type: "string", format: "uuid" },
+          sessionId: { type: "string", format: "uuid" },
           status: {
             type: "string",
             enum: ["queued", "running", "completed", "failed", "cancelled"],

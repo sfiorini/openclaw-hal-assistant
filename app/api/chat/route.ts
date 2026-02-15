@@ -5,15 +5,22 @@ import { applyCorsHeaders, corsPreflightResponse } from "../../../lib/middleware
 import { createLogger } from "../../../lib/middleware/logger"
 import { limitRequest } from "../../../lib/middleware/rate-limit"
 import { withApiKeyAuth } from "../../../lib/middleware/auth"
-import { chatJobSubmissionResponseSchema, chatRequestSchema } from "../../../lib/schemas/chat.schema"
+import {
+  chatJobSubmissionResponseSchema,
+  chatRequestSchema,
+} from "../../../lib/schemas/chat.schema"
+import { parseChatSessionCommand } from "../../../lib/chat/schemas/session.schema"
+import { getOrCreateSession, getSessionForJobLimitCheck, releaseSessionJobSlot } from "../../../lib/chat/sessions"
 import { getServerEnvConfig } from "../../../lib/config/env"
 import {
   createChatJob,
   getChatJobById,
+  getChatJobByIdempotencyKey,
   getPollAfterMs,
   markChatJobFinalized,
   markChatJobProgress,
   markChatJobRunning,
+  type ChatJobStatus,
   POLL_CONFIG,
 } from "../../../lib/chat/jobs"
 import { chatWithOpenClaw, mapOpenClawError } from "../../../lib/openclaw/chat"
@@ -39,11 +46,48 @@ const readIdempotencyKey = (request: NextRequest) => {
   return key.trim() || undefined
 }
 
+const buildSubmissionResponse = (job: {
+  id: string
+  sessionId: string
+  status: ChatJobStatus
+  attemptCount?: number
+}) =>
+  chatJobSubmissionResponseSchema.parse({
+    jobId: job.id,
+    sessionId: job.sessionId,
+    status: "queued",
+    pollAfterMs: getPollAfterMs(job.status, job.attemptCount ?? 0),
+    maxPollAttempts: POLL_CONFIG.maxPollAttempts,
+    maxWaitMs: POLL_CONFIG.maxWaitMs,
+  })
+
+const resolveSessionContext = async (payload: {
+  message: string
+  sessionId?: string
+  newSession: boolean
+  conversationHistory: Array<{ role: "user" | "assistant"; content: string }>
+}) => {
+  const parsed = parseChatSessionCommand(payload.message)
+  const shouldCreateNewSession = payload.newSession || parsed.newSession
+  const session = await getOrCreateSession(
+    shouldCreateNewSession ? undefined : payload.sessionId,
+    shouldCreateNewSession,
+    shouldCreateNewSession ? [] : payload.conversationHistory
+  )
+
+  return {
+    message: parsed.message,
+    conversationHistory: session.conversation,
+    sessionId: session.id,
+  }
+}
+
 const executeChatJob = async (
   jobId: string,
   payload: {
     message: string
     conversationHistory: Array<{ role: "user" | "assistant"; content: string }>
+    sessionId: string
   },
   config: { gatewayUrl: string; token: string; agentId: string; requestTimeoutMs: number }
 ) => {
@@ -65,6 +109,7 @@ const executeChatJob = async (
         gatewayUrl: config.gatewayUrl,
         gatewayToken: config.token,
         agentId: config.agentId,
+        sessionId: payload.sessionId,
       },
       config.requestTimeoutMs
     )
@@ -138,6 +183,14 @@ export async function POST(request: NextRequest) {
     return applyCorsHeaders(rateLimitResponse, request)
   }
 
+  const idempotencyKey = readIdempotencyKey(request)
+  if (idempotencyKey) {
+    const existing = getChatJobByIdempotencyKey(idempotencyKey)
+    if (existing) {
+      return buildJsonResponse(request, 202, buildSubmissionResponse(existing))
+    }
+  }
+
   let payload
   try {
     payload = chatRequestSchema.parse(await request.json())
@@ -157,17 +210,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const job = createChatJob({
-      message: payload.message,
-      conversationHistory: payload.conversationHistory,
-      idempotencyKey: readIdempotencyKey(request),
-    })
+    const sessionContext = await resolveSessionContext(payload)
+    await getSessionForJobLimitCheck(sessionContext.sessionId)
+    let job
+    try {
+      job = createChatJob({
+        message: sessionContext.message,
+        conversationHistory: sessionContext.conversationHistory,
+        sessionId: sessionContext.sessionId,
+        idempotencyKey,
+      })
+    } catch (error) {
+      await releaseSessionJobSlot(sessionContext.sessionId)
+      throw error
+    }
 
     void executeChatJob(
       job.id,
       {
         message: job.request.message,
         conversationHistory: job.request.conversationHistory,
+        sessionId: job.sessionId,
       },
       {
         gatewayUrl: env.OPENCLAW_GATEWAY_URL,
@@ -177,30 +240,32 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    const responsePayload = chatJobSubmissionResponseSchema.parse({
-      jobId: job.id,
-      status: "queued",
-      pollAfterMs: getPollAfterMs("queued"),
-      maxPollAttempts: POLL_CONFIG.maxPollAttempts,
-      maxWaitMs: POLL_CONFIG.maxWaitMs,
-    })
+    const responsePayload = buildSubmissionResponse(job)
     logger.info(`[${CHAT_OPERATION}] accepted job: ${job.id}`)
 
     return buildJsonResponse(request, 202, responsePayload)
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      (error as { code?: string }).code === "concurrency_error"
-    ) {
-      const message = (error as { message?: string }).message || "Maximum concurrent jobs exceeded"
-      return buildJsonResponse(request, 503, {
-        error: "Concurrency limit reached",
-        code: "concurrency_error",
-        message,
-        retryable: true,
-        retryAfterMs: POLL_CONFIG.initialPollAfterMs,
-      })
+    if (error && typeof error === "object" && (error as { code?: string }).code) {
+      const code = (error as { code?: string }).code
+      const message = (error as { message?: string }).message
+
+      if (code === "session_limit_exceeded" || code === "concurrency_error") {
+        return buildJsonResponse(request, 503, {
+          error: "Concurrency limit reached",
+          code,
+          message: message || "Maximum concurrent work in progress",
+          retryable: true,
+          retryAfterMs: POLL_CONFIG.initialPollAfterMs,
+        })
+      }
+
+      if (code === "session_not_found") {
+        return buildJsonResponse(request, 404, {
+          error: "Session not found",
+          code,
+          message: message || "Session does not exist",
+        })
+      }
     }
 
     logger.error(`Chat route error: ${getErrorMessage(error)}`)
