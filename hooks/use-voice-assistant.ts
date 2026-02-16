@@ -23,7 +23,6 @@ interface UseVoiceAssistantReturn {
 interface UseVoiceAssistantOptions {
   wakeWordEnabled?: boolean
   wakeWord?: string
-  wakeEngine?: "speech_recognition" | "porcupine"
   wakeWordAccessKey?: string
   wakeWordModelPath?: string
   wakeWordKeywordPath?: string
@@ -36,39 +35,6 @@ const RECORDING_MIN_DURATION_MS = 800
 const RECORDING_SILENCE_WINDOW_MS = 2_400
 const RECORDING_VOICE_ACTIVITY_THRESHOLD = 0.012
 const OPENCLAW_SESSION_STORAGE_KEY = "openclaw_session_id"
-
-type WakeWordResult = {
-  isFinal?: boolean
-  0?: {
-    transcript?: unknown
-  }
-}
-
-type SpeechRecognitionLike = {
-  continuous: boolean
-  interimResults: boolean
-  lang: string
-  onresult: ((event: { results: ArrayLike<WakeWordResult> }) => void) | null
-  onerror: ((event: { error?: unknown }) => void) | null
-  onend: (() => void) | null
-  start: () => void
-  stop: () => void
-}
-
-type SpeechRecognitionLikeCtor = new () => SpeechRecognitionLike
-
-const resolveSpeechRecognitionCtor = (): SpeechRecognitionLikeCtor | null => {
-  if (typeof window === "undefined") {
-    return null
-  }
-
-  const speechWindow = window as Window & {
-    SpeechRecognition?: SpeechRecognitionLikeCtor
-    webkitSpeechRecognition?: SpeechRecognitionLikeCtor
-  }
-
-  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null
-}
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -115,21 +81,6 @@ const parseChatSubmitResponse = (payload: unknown): ChatSubmitResponse => {
   }
 }
 
-const normalizeResultTranscript = (result: unknown) => {
-  if (!result || typeof result !== "object") {
-    return null
-  }
-
-  const candidate = result as {
-    0?: {
-      transcript?: unknown
-    }
-  }
-
-  const transcript = candidate[0]?.transcript
-  return typeof transcript === "string" ? transcript.trim() : null
-}
-
 const computeRms = (samples: Float32Array) => {
   let sum = 0
   for (let i = 0; i < samples.length; i += 1) {
@@ -161,32 +112,6 @@ const unlockBrowserAudio = () => {
   } catch {
     // best effort
   }
-}
-
-const extractWakeText = (results: ArrayLike<WakeWordResult> | undefined, wakeWord: string) => {
-  if (!results || typeof results.length !== "number") {
-    return null
-  }
-
-  const wake = wakeWord.trim().toLowerCase()
-  for (let i = 0; i < results.length; i += 1) {
-    const result = results[i]
-    if (!result) {
-      continue
-    }
-
-    const transcript = normalizeResultTranscript(result)
-    if (!transcript) {
-      continue
-    }
-
-    const normalized = transcript.toLowerCase()
-    if (normalized.includes(wake)) {
-      return normalized
-    }
-  }
-
-  return null
 }
 
 const readApiErrorMessage = async (response: Response, fallbackMessage: string) => {
@@ -261,8 +186,6 @@ export function useVoiceAssistant(
 
   const wakeWord = options.wakeWord?.trim() || "hey luke"
   const wakeWordEnabled = options.wakeWordEnabled ?? true
-  const wakeEngine = options.wakeEngine ?? "speech_recognition"
-  const usePorcupineWakeEngine = wakeEngine === "porcupine"
   const wakeWordAccessKey = options.wakeWordAccessKey?.trim()
   const wakeWordModelPath = options.wakeWordModelPath?.trim()
   const wakeWordKeywordPath = options.wakeWordKeywordPath?.trim()
@@ -280,8 +203,6 @@ export function useVoiceAssistant(
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakingTimeoutRef = useRef<number | null>(null)
   const requestControllerRef = useRef<AbortController | null>(null)
-  const wakeRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
-  const wakeRecognitionActiveRef = useRef(false)
   const porcupineWakeEngineRef = useRef<PorcupineWakeEngine | null>(null)
   const porcupineWakeEngineInitRef = useRef<Promise<PorcupineWakeEngine | null> | null>(null)
   const hasUserGestureRef = useRef(false)
@@ -299,13 +220,8 @@ export function useVoiceAssistant(
       return
     }
 
-    if (usePorcupineWakeEngine) {
-      setWakeWordSupported(Boolean(wakeWordAccessKey && wakeWordModelPath))
-      return
-    }
-
-    setWakeWordSupported(Boolean(resolveSpeechRecognitionCtor()))
-  }, [usePorcupineWakeEngine, wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
+    setWakeWordSupported(Boolean(wakeWordAccessKey && wakeWordModelPath))
+  }, [wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -401,24 +317,6 @@ export function useVoiceAssistant(
       audioRef.current = null
     }
   }, [clearSpeakingTimeout])
-
-  const stopWakeRecognition = useCallback(() => {
-    const recognition = wakeRecognitionRef.current
-    if (!recognition) {
-      return
-    }
-
-    if (!wakeRecognitionActiveRef.current) {
-      return
-    }
-
-    try {
-      wakeRecognitionActiveRef.current = false
-      recognition.stop()
-    } catch {
-      // best effort
-    }
-  }, [])
 
   const processAudio = useCallback(
     async (audioBlob: Blob) => {
@@ -550,7 +448,7 @@ export function useVoiceAssistant(
         requestControllerRef.current = null
       }
     },
-    [sessionId, stopMediaStream, stopWakeRecognition, clearSpeakingTimeout]
+    [sessionId, stopMediaStream, clearSpeakingTimeout]
   )
 
   const stopRecording = useCallback(() => {
@@ -662,10 +560,6 @@ export function useVoiceAssistant(
   }, [processAudio, startRecordingWatchdog])
 
   useEffect(() => {
-    if (!usePorcupineWakeEngine) {
-      return
-    }
-
     if (!wakeWordEnabled || !wakeWord.trim() || !hasUserGesture) {
       return
     }
@@ -750,7 +644,6 @@ export function useVoiceAssistant(
     hasUserGesture,
     startRecording,
     state,
-    usePorcupineWakeEngine,
     wakeWord,
     wakeWordAccessKey,
     wakeWordEnabled,
@@ -760,8 +653,7 @@ export function useVoiceAssistant(
   ])
 
   useEffect(() => {
-    const shouldKeepEngine =
-      usePorcupineWakeEngine && wakeWordEnabled && Boolean(wakeWordAccessKey && wakeWordModelPath)
+    const shouldKeepEngine = wakeWordEnabled && Boolean(wakeWordAccessKey && wakeWordModelPath)
 
     if (shouldKeepEngine) {
       return
@@ -779,7 +671,7 @@ export function useVoiceAssistant(
     }
 
     void releaseEngine()
-  }, [usePorcupineWakeEngine, wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
+  }, [wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
 
   const abortAndReset = useCallback(() => {
     stopCurrentRequest()
@@ -788,115 +680,6 @@ export function useVoiceAssistant(
     setResponse("")
     setError("")
   }, [stopCurrentRequest, stopPlayback])
-
-  const startWakeRecognition = useCallback(() => {
-    if (usePorcupineWakeEngine) {
-      return
-    }
-
-    const constructor = resolveSpeechRecognitionCtor()
-    if (!constructor || !wakeWordEnabled || !wakeWord.trim()) {
-      return
-    }
-
-    if (!hasUserGestureRef.current) {
-      return
-    }
-
-    if (stateRef.current !== "idle") {
-      return
-    }
-
-    if (wakeRecognitionActiveRef.current) {
-      return
-    }
-
-    const recognition = wakeRecognitionRef.current ?? new constructor()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = "en-US"
-
-    recognition.onresult = (event: { results: ArrayLike<WakeWordResult> }) => {
-      if (wakeSuppressedRef.current) {
-        return
-      }
-
-      const detected = extractWakeText(event.results, wakeWord)
-      if (!detected) {
-        return
-      }
-
-      wakeSuppressedRef.current = true
-
-      if (stateRef.current !== "idle") {
-        return
-      }
-
-      stateRef.current = "recording"
-      stopWakeRecognition()
-      void startRecording()
-    }
-
-    recognition.onerror = (event: { error?: unknown }) => {
-      wakeRecognitionActiveRef.current = false
-      const errorCode = typeof event?.error === "string" ? event.error : "unknown"
-      if (errorCode === "not-allowed" || errorCode === "service-not-allowed") {
-        return
-      }
-      if (wakeWordEnabled && stateRef.current === "idle" && !wakeRecognitionActiveRef.current) {
-        startWakeRecognition()
-      }
-    }
-
-    recognition.onend = () => {
-      wakeRecognitionActiveRef.current = false
-      if (wakeWordEnabled && stateRef.current === "idle" && !wakeRecognitionActiveRef.current) {
-        startWakeRecognition()
-      }
-    }
-
-    wakeRecognitionRef.current = recognition
-
-    try {
-      wakeRecognitionActiveRef.current = true
-      recognition.start()
-    } catch {
-      wakeRecognitionActiveRef.current = false
-    }
-  }, [startRecording, stopWakeRecognition, usePorcupineWakeEngine, wakeWord, wakeWordEnabled])
-
-  useEffect(() => {
-    if (usePorcupineWakeEngine || !wakeWordEnabled || !wakeWord.trim()) {
-      stopWakeRecognition()
-      return
-    }
-
-    const ctor = resolveSpeechRecognitionCtor()
-    if (!ctor) {
-      stopWakeRecognition()
-      setWakeWordSupported(false)
-      return
-    }
-
-    setWakeWordSupported(true)
-
-    if (state === "idle" && hasUserGesture) {
-      if (!wakeRecognitionActiveRef.current) {
-        startWakeRecognition()
-      }
-      return
-    }
-
-    stopWakeRecognition()
-  }, [
-    state,
-    startWakeRecognition,
-    stopWakeRecognition,
-    usePorcupineWakeEngine,
-    wakeWord,
-    wakeWordEnabled,
-    hasUserGesture,
-  ])
 
   const toggleRecording = useCallback(() => {
     if (state === "idle") {
@@ -931,13 +714,10 @@ export function useVoiceAssistant(
 
   useEffect(() => {
     return () => {
-      stopWakeRecognition()
       if (porcupineWakeEngineRef.current) {
         void porcupineWakeEngineRef.current.release().catch(() => undefined)
         porcupineWakeEngineRef.current = null
       }
-      wakeRecognitionRef.current = null
-      wakeRecognitionActiveRef.current = false
       stopCurrentRequest()
       clearRecordingWatchdog()
       stopMediaStream()
@@ -951,7 +731,6 @@ export function useVoiceAssistant(
     stopCurrentRequest,
     stopMediaStream,
     stopPlayback,
-    stopWakeRecognition,
   ])
 
   return {

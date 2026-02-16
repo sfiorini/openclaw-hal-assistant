@@ -7,7 +7,6 @@ import { useVoiceAssistant } from "@/hooks/use-voice-assistant"
 interface HalPanelProps {
   wakeWordEnabled: boolean
   wakeWord: string
-  wakeEngine: "speech_recognition" | "porcupine"
   wakeWordAccessKey?: string
   wakeWordModelPath?: string
   wakeWordKeywordPath?: string
@@ -17,7 +16,6 @@ interface HalPanelProps {
 export function HalPanel({
   wakeWordEnabled,
   wakeWord,
-  wakeEngine,
   wakeWordAccessKey,
   wakeWordModelPath,
   wakeWordKeywordPath,
@@ -33,7 +31,6 @@ export function HalPanel({
   } = useVoiceAssistant({
     wakeWordEnabled,
     wakeWord,
-    wakeEngine,
     wakeWordAccessKey,
     wakeWordModelPath,
     wakeWordKeywordPath,

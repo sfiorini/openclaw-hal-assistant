@@ -11,28 +11,6 @@ vi.mock("../../lib/wake/porcupine-wake-engine", () => ({
 
 import { useVoiceAssistant } from "../../hooks/use-voice-assistant"
 
-class MockSpeechRecognition {
-  static instances: MockSpeechRecognition[] = []
-
-  continuous = false
-  interimResults = false
-  lang = "en-US"
-  onresult: ((event: { results: ArrayLike<{ isFinal?: boolean; 0?: { transcript?: string } }> }) => void) | null = null
-  onerror: ((event: { error?: unknown }) => void) | null = null
-  onend: (() => void) | null = null
-
-  readonly start = vi.fn()
-  readonly stop = vi.fn()
-
-  constructor() {
-    MockSpeechRecognition.instances.push(this)
-  }
-
-  static reset() {
-    MockSpeechRecognition.instances = []
-  }
-}
-
 class MockAudio {
   onended: ((event: Event) => void) | null = null
   onerror: ((event: Event) => void) | null = null
@@ -72,26 +50,7 @@ class MockMediaRecorder {
 
 beforeEach(() => {
   vi.restoreAllMocks()
-  MockSpeechRecognition.reset()
   createPorcupineWakeEngineMock.mockReset()
-
-  Object.defineProperty(globalThis, "SpeechRecognition", {
-    configurable: true,
-    value: MockSpeechRecognition,
-  })
-  Object.defineProperty(window, "SpeechRecognition", {
-    configurable: true,
-    value: MockSpeechRecognition,
-  })
-
-  Object.defineProperty(globalThis, "webkitSpeechRecognition", {
-    configurable: true,
-    value: undefined,
-  })
-  Object.defineProperty(window, "webkitSpeechRecognition", {
-    configurable: true,
-    value: undefined,
-  })
 
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -115,45 +74,7 @@ beforeEach(() => {
 })
 
 describe("useVoiceAssistant wake-word behavior", () => {
-  it("detects wake phrase and starts recording", async () => {
-    const { result } = renderHook(() => useVoiceAssistant({ wakeWord: "hey luke", wakeWordEnabled: true }))
-
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }))
-    })
-
-    await waitFor(() => {
-      expect(MockSpeechRecognition.instances[0]).toBeTruthy()
-    })
-
-    const instance = MockSpeechRecognition.instances[0]
-
-    act(() => {
-      instance.onresult?.({
-        results: [{
-          isFinal: true,
-          0: {
-            transcript: "please hey luke assistant",
-          },
-        }],
-      })
-    })
-
-    await waitFor(() => {
-      expect(result.current.state).toBe("recording")
-    })
-  })
-
-  it("supports manual mode when wake recognition is unavailable", async () => {
-    Object.defineProperty(globalThis, "SpeechRecognition", {
-      configurable: true,
-      value: undefined,
-    })
-    Object.defineProperty(window, "SpeechRecognition", {
-      configurable: true,
-      value: undefined,
-    })
-
+  it("supports manual mode when porcupine wake is not configured", async () => {
     const { result } = renderHook(() => useVoiceAssistant({ wakeWordEnabled: true }))
 
     expect(result.current.wakeWordSupported).toBe(false)
@@ -181,7 +102,6 @@ describe("useVoiceAssistant wake-word behavior", () => {
       useVoiceAssistant({
         wakeWordEnabled: true,
         wakeWord: "hey luke",
-        wakeEngine: "porcupine",
         wakeWordAccessKey: "test-access-key",
         wakeWordModelPath: "/porcupine_params.pv",
         wakeWordKeywordPath: "/keywords/hey-luke.ppn",
