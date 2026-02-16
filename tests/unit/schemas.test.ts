@@ -4,7 +4,6 @@ import {
   chatMessageSchema,
   chatRequestSchema,
   chatJobSubmissionResponseSchema,
-  chatJobBaseResponseSchema,
   chatJobCompletedSchema,
   chatJobStatusSchema,
   chatResponseSchema,

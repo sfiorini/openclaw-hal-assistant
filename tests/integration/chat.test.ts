@@ -135,6 +135,26 @@ describe("Chat async job routes", () => {
     expect(payload.maxPollAttempts).toBeGreaterThan(0)
   })
 
+  it("uses OPENCLAW_SESSION_ID as default session when no sessionId is provided", async () => {
+    const previous = process.env.OPENCLAW_SESSION_ID
+
+    try {
+      process.env.OPENCLAW_SESSION_ID = "11111111-1111-4111-8111-111111111111"
+
+      const response = await POST(createChatRequest({ message: "Hello with default session" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(202)
+      expect(payload.sessionId).toBe("11111111-1111-4111-8111-111111111111")
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENCLAW_SESSION_ID
+      } else {
+        process.env.OPENCLAW_SESSION_ID = previous
+      }
+    }
+  })
+
   it("deduplicates requests with same idempotency key", async () => {
     const headers = { "Idempotency-Key": "same-key-1" }
     const first = await POST(createChatRequest({ message: "Hello" }, headers))
@@ -223,6 +243,55 @@ describe("Chat async job routes", () => {
     expect(secondMessages.some((message) => message.role === "user" && message.content === "How are you?")).toBe(
       true
     )
+  })
+
+  it("auto-prefixes default model command for new sessions when configured", async () => {
+    const capturedBodies: Record<string, unknown>[] = []
+    const previousModel = process.env.OPENCLAW_DEFAULT_AGENT_MODEL
+
+    try {
+      process.env.OPENCLAW_DEFAULT_AGENT_MODEL = "hal-test-model"
+
+      server.use(
+        http.post(/.*\/v1\/chat\/completions$/, async ({ request }) => {
+          const payload = (await request.json()) as Record<string, unknown>
+          capturedBodies.push(payload)
+          return HttpResponse.json({
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: "Model init confirmed",
+                },
+              },
+            ],
+          })
+        })
+      )
+
+      const response = await POST(createChatRequest({ message: "Hello there" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(202)
+      await waitForTerminal(payload.jobId)
+
+      const first = capturedBodies[0]
+      const messages = Array.isArray(first?.messages) ? first.messages : []
+      const lastMessage = messages[messages.length - 1] as {
+        role?: string
+        content?: string
+      }
+      expect(lastMessage).toMatchObject({
+        role: "user",
+        content: "/new hal-test-model Hello there",
+      })
+    } finally {
+      if (previousModel === undefined) {
+        delete process.env.OPENCLAW_DEFAULT_AGENT_MODEL
+      } else {
+        process.env.OPENCLAW_DEFAULT_AGENT_MODEL = previousModel
+      }
+    }
   })
 
   it("starts a new session for reset command", async () => {

@@ -218,7 +218,8 @@ export const installBrowserApiMocks = async (
         }
       }
 
-      ;(window as Window & { Audio: typeof MockAudio }).Audio = MockAudio as typeof Audio
+      const windowWithAudio = window as Window & { Audio: typeof MockAudio }
+      windowWithAudio.Audio = MockAudio as typeof Audio
     },
     {
       sttText,

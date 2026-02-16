@@ -8,6 +8,7 @@ import {
   getChatSession,
   getOrCreateSession,
   getSessionForJobLimitCheck,
+  setSessionModelInitialized,
   releaseSessionJobSlot,
   resetChatSession,
 } from "../../lib/chat/sessions"
@@ -36,6 +37,31 @@ describe("Chat sessions", () => {
     expect(reused.conversation).toEqual([{ role: "user", content: "hi there" }])
   })
 
+  it("generates session identity with app and username", async () => {
+    const session = await getOrCreateSession(undefined, false, [], {
+      appName: "hal-assistant",
+      gatewayUsername: "captain",
+    })
+
+    expect(session.sessionKey).toContain("app:hal-assistant:user:captain:uuid:")
+    expect(session.sessionName).toBe(session.sessionKey)
+    expect(session.modelInitialized).toBe(false)
+  })
+
+  it("uses provided sessionId when explicitly forced", async () => {
+    const session = await getOrCreateSession(undefined, false, [], {
+      requestedSessionId: "11111111-1111-4111-8111-111111111111",
+      forceRequestedSessionId: true,
+      appName: "hal-assistant",
+      gatewayUsername: "captain",
+    })
+
+    expect(session.id).toBe("11111111-1111-4111-8111-111111111111")
+    expect(session.sessionKey).toBe(
+      "app:hal-assistant:user:captain:uuid:11111111-1111-4111-8111-111111111111"
+    )
+  })
+
   it("creates a new session when requested session is unknown", async () => {
     const created = await getOrCreateSession(DEFAULT_SESSION_ID, false, [{ role: "user", content: "new context" }])
 
@@ -51,6 +77,14 @@ describe("Chat sessions", () => {
     const continued = await getOrCreateSession(original.id, true, [{ role: "user", content: "ignored" }])
     expect(continued.id).not.toBe(original.id)
     expect(continued.conversation).toHaveLength(0)
+  })
+
+  it("resets model initialization when session is reset", async () => {
+    const created = await getOrCreateSession(undefined, false, [{ role: "user", content: "first turn" }])
+    await setSessionModelInitialized(created.id)
+
+    const updated = await resetChatSession(created.id)
+    expect(updated?.modelInitialized).toBe(false)
   })
 
   it("resets conversation for existing session", async () => {
@@ -88,4 +122,3 @@ describe("Chat sessions", () => {
     expect(getChatSession(created.id)).toBeUndefined()
   })
 })
-

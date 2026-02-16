@@ -16,6 +16,7 @@ import {
   appendToSessionConversation,
   releaseSessionJobSlot,
   setSessionLastJobId,
+  setSessionModelInitialized,
 } from "../../../lib/chat/sessions"
 import { getServerEnvConfig } from "../../../lib/config/env"
 import {
@@ -72,17 +73,36 @@ const resolveSessionContext = async (payload: {
   sessionId?: string
   newSession: boolean
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>
+  appName: string
+  gatewayUsername: string
+  defaultSessionId?: string
+  defaultAgentModel?: string
 }) => {
   const parsed = parseChatSessionCommand(payload.message)
   const shouldCreateNewSession = payload.newSession || parsed.newSession
+  const requestedSessionId = payload.sessionId ?? payload.defaultSessionId
+  const shouldForceDefaultSession =
+    !shouldCreateNewSession && !!payload.defaultSessionId && !payload.sessionId
   const session = await getOrCreateSession(
-    shouldCreateNewSession ? undefined : payload.sessionId,
+    shouldCreateNewSession ? undefined : requestedSessionId,
     shouldCreateNewSession,
-    shouldCreateNewSession ? [] : payload.conversationHistory
+    shouldCreateNewSession ? [] : payload.conversationHistory,
+    {
+      appName: payload.appName,
+      gatewayUsername: payload.gatewayUsername,
+      requestedSessionId: shouldForceDefaultSession ? requestedSessionId : undefined,
+      forceRequestedSessionId: shouldForceDefaultSession,
+    }
   )
+  let message = parsed.message
+  if (!shouldCreateNewSession && !session.modelInitialized && payload.defaultAgentModel?.trim()) {
+    const normalizedModel = payload.defaultAgentModel.trim()
+    message = parsed.message.length > 0 ? `/new ${normalizedModel} ${parsed.message}` : `/new ${normalizedModel}`
+    await setSessionModelInitialized(session.id)
+  }
 
   return {
-    message: parsed.message,
+    message,
     conversationHistory: session.conversation,
     sessionId: session.id,
   }
@@ -235,7 +255,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const sessionContext = await resolveSessionContext(payload)
+    const sessionContext = await resolveSessionContext({
+      message: payload.message,
+      sessionId: payload.sessionId,
+      newSession: payload.newSession,
+      conversationHistory: payload.conversationHistory,
+      appName: env.OPENCLAW_APP_NAME,
+      gatewayUsername: env.OPENCLAW_GATEWAY_USERNAME,
+      defaultSessionId: env.OPENCLAW_SESSION_ID,
+      defaultAgentModel: env.OPENCLAW_DEFAULT_AGENT_MODEL,
+    })
     await getSessionForJobLimitCheck(sessionContext.sessionId)
     let job
     try {
@@ -262,7 +291,8 @@ export async function POST(request: NextRequest) {
         gatewayUrl: env.OPENCLAW_GATEWAY_URL,
         token: env.OPENCLAW_GATEWAY_TOKEN,
         agentId: env.OPENCLAW_AGENT_ID,
-        requestTimeoutMs: env.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS,
+        requestTimeoutMs:
+          env.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS ?? env.OPENCLAW_GATEWAY_TIMEOUT_MS ?? 120_000,
       }
     )
 

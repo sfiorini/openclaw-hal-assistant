@@ -34,6 +34,13 @@ describe("getServerEnvConfig", () => {
     expect(config.OPENCLAW_RATE_LIMIT).toBe(60)
     expect(config.LOG_LEVEL).toBe("info")
     expect(config.OPENCLAW_API_DOCS_ENABLED).toBe(false)
+    expect(config.OPENCLAW_APP_NAME).toBe("openclaw-hal-assistant")
+    expect(config.OPENCLAW_GATEWAY_USERNAME).toBe("default-user")
+    expect(config.OPENCLAW_WAKE_WORD_ENABLED).toBe(true)
+    expect(config.OPENCLAW_WAKE_WORD).toBe("hey luke")
+    expect(config.OPENCLAW_GATEWAY_TIMEOUT_MS).toBe(120_000)
+    expect(config.OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS).toBe(3)
+    expect(config.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS).toBe(120_000)
   })
 
   it("throws when OPENCLAW_GATEWAY_URL is not a valid URL", () => {
@@ -53,7 +60,19 @@ describe("validateEnv", () => {
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.config.OPENCLAW_AGENT_ID).toBe("main")
+      expect(result.config.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS).toBe(120_000)
     }
+  })
+
+  it("prefers OPENCLAW_GATEWAY_TIMEOUT_MS when openclaw chat timeout is omitted", () => {
+    const result = getServerEnvConfig(
+      createEnv({
+        OPENCLAW_CHAT_REQUEST_TIMEOUT_MS: undefined,
+        OPENCLAW_GATEWAY_TIMEOUT_MS: "90000",
+      })
+    )
+
+    expect(result.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS).toBe(90_000)
   })
 
   it("returns detailed errors for invalid environment", () => {

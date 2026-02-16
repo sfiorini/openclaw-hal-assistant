@@ -19,6 +19,14 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
 - `OPENCLAW_RATE_LIMIT` (default `60`): requests/minute per IP.
 - `LOG_LEVEL` (default `info`): logger level (`error`, `warn`, `info`, `debug`).
 - `OPENCLAW_CHAT_REQUEST_TIMEOUT_MS` (default `120000`): timeout in ms for OpenClaw chat completion calls.
+- `OPENCLAW_APP_NAME` (default `openclaw-hal-assistant`): logical app name used in session key generation.
+- `OPENCLAW_GATEWAY_USERNAME` (default `default-user`): logical user handle used in session key generation.
+- `OPENCLAW_SESSION_ID` (optional): pre-existing/explicit session UUID for deterministic session continuity across restarts and devices.
+- `OPENCLAW_DEFAULT_AGENT_MODEL` (optional): when provided, `/new <model>` bootstrap is auto-prefixed to first message of each new session.
+- `OPENCLAW_WAKE_WORD_ENABLED` (default `true`): enables voice wake-word path.
+- `OPENCLAW_WAKE_WORD` (default `hey luke`): wake phrase used by the frontend.
+- `OPENCLAW_GATEWAY_TIMEOUT_MS` (default `120000`): timeout in ms for Gateway protocol calls.
+- `OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS` (default `3`): max retry attempts for recoverable Gateway socket failures.
 
 ## Async chat behavior
 

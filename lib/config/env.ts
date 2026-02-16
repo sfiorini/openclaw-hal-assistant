@@ -2,7 +2,7 @@ import { z } from "zod"
 
 const parseBoolean = (value: unknown) => {
   if (value === undefined || value === "") {
-    return false
+    return undefined
   }
 
   if (typeof value === "boolean") {
@@ -22,7 +22,7 @@ const parseBoolean = (value: unknown) => {
     return false
   }
 
-  return value
+  return undefined
 }
 
 const parseNumber = (value: unknown) => {
@@ -53,6 +53,21 @@ const parseLogLevel = (value: unknown) => {
   return value.trim().toLowerCase()
 }
 
+const parseOptionalString = (value: unknown) => {
+  if (typeof value !== "string") {
+    return value
+  }
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : undefined
+}
+
+const parseOptionalPositiveInt = (value: unknown) => {
+  if (value === undefined || value === "") {
+    return undefined
+  }
+  return parseNumber(value)
+}
+
 const envSchema = z.object({
   ELEVENLABS_API_KEY: z
     .string({ required_error: "ELEVENLABS_API_KEY is required" })
@@ -70,6 +85,34 @@ const envSchema = z.object({
     .string({ required_error: "OPENCLAW_GATEWAY_TOKEN is required" })
     .trim()
     .min(1, "OPENCLAW_GATEWAY_TOKEN is required"),
+  OPENCLAW_APP_NAME: z
+    .string({ required_error: "OPENCLAW_APP_NAME is required" })
+    .trim()
+    .min(1, "OPENCLAW_APP_NAME is required")
+    .default("openclaw-hal-assistant"),
+  OPENCLAW_GATEWAY_USERNAME: z
+    .string()
+    .trim()
+    .min(1, "OPENCLAW_GATEWAY_USERNAME is required")
+    .default("default-user"),
+  OPENCLAW_SESSION_ID: z
+    .string()
+    .trim()
+    .uuid("OPENCLAW_SESSION_ID must be a valid UUID")
+    .optional(),
+  OPENCLAW_DEFAULT_AGENT_MODEL: z.preprocess(
+    parseOptionalString,
+    z.string().trim().min(1).optional()
+  ),
+  OPENCLAW_WAKE_WORD_ENABLED: z.preprocess(
+    parseBoolean,
+    z.boolean().default(true)
+  ),
+  OPENCLAW_WAKE_WORD: z
+    .string()
+    .trim()
+    .min(1, "OPENCLAW_WAKE_WORD is required")
+    .default("hey luke"),
   OPENCLAW_AGENT_ID: z
     .string()
     .trim()
@@ -77,7 +120,7 @@ const envSchema = z.object({
     .default("main"),
   OPENCLAW_API_DOCS_ENABLED: z.preprocess(
     parseBoolean,
-    z.boolean()
+    z.boolean().default(false)
   ),
   OPENCLAW_API_DOCS_TOKEN: z
     .string()
@@ -94,13 +137,31 @@ const envSchema = z.object({
       .positive()
       .default(60)
   ),
+  OPENCLAW_GATEWAY_TIMEOUT_MS: z.preprocess(
+    parseOptionalPositiveInt,
+    z
+      .number({ invalid_type_error: "OPENCLAW_GATEWAY_TIMEOUT_MS must be a positive number" })
+      .int()
+      .positive()
+      .default(120_000)
+  ),
   OPENCLAW_CHAT_REQUEST_TIMEOUT_MS: z.preprocess(
-    parseNumber,
+    parseOptionalPositiveInt,
     z
       .number({ invalid_type_error: "OPENCLAW_CHAT_REQUEST_TIMEOUT_MS must be a positive number" })
       .int()
       .positive()
-      .default(120_000)
+      .optional()
+  ),
+  OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS: z.preprocess(
+    parseOptionalPositiveInt,
+    z
+      .number({
+        invalid_type_error: "OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS must be a positive number",
+      })
+      .int()
+      .positive()
+      .default(3)
   ),
   LOG_LEVEL: z.preprocess(
     parseLogLevel,
@@ -118,8 +179,13 @@ export function getServerEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvCon
       .join("\n")
     throw new Error(`Environment validation failed:\n${errors}`)
   }
-
-  return result.data
+  return {
+    ...result.data,
+    OPENCLAW_CHAT_REQUEST_TIMEOUT_MS:
+      result.data.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS ??
+      result.data.OPENCLAW_GATEWAY_TIMEOUT_MS ??
+      120_000,
+  }
 }
 
 export function validateEnv(env: NodeJS.ProcessEnv = process.env) {
@@ -136,6 +202,12 @@ export function validateEnv(env: NodeJS.ProcessEnv = process.env) {
 
   return {
     success: true as const,
-    config: result.data,
+    config: {
+      ...result.data,
+      OPENCLAW_CHAT_REQUEST_TIMEOUT_MS:
+        result.data.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS ??
+        result.data.OPENCLAW_GATEWAY_TIMEOUT_MS ??
+        120_000,
+    },
   }
 }

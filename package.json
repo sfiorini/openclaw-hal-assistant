@@ -10,7 +10,7 @@
     "build": "next build",
     "postbuild": "pnpm gen:openapi",
     "start": "next start",
-    "lint": "pnpm dlx eslint@8.57.0 . --ext .js,.mjs,.cjs",
+    "lint": "pnpm exec eslint . --ext .js,.jsx,.ts,.tsx,.mjs,.cjs",
     "docker:build": "docker build -t openclaw-hal-assistant:latest .",
     "docker:run": "docker run -p 3000:3000 --env-file .env openclaw-hal-assistant:latest",
     "docker:up": "docker compose up -d",
@@ -83,23 +83,26 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.13",
     "@asteasolutions/zod-to-openapi": "^6.3.0",
     "@playwright/test": "^1.45.0",
+    "@tailwindcss/postcss": "^4.1.13",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "@typescript-eslint/parser": "7.18.0",
     "@vitejs/plugin-react": "^4.3.0",
     "@vitest/coverage-v8": "^2.0.0",
+    "eslint": "8.57.0",
     "happy-dom": "^15.0.0",
     "msw": "^2.3.0",
     "playwright": "^1.45.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
-    "vitest": "^2.0.0",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vitest": "^2.0.0"
   },
   "pnpm": {
     "overrides": {

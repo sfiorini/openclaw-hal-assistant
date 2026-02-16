@@ -1,4 +1,5 @@
 import { createLogger } from "../middleware/logger"
+import { buildSessionIdentity } from "./session-id"
 
 const logger = createLogger()
 
@@ -17,12 +18,22 @@ export type SessionMessage = {
 
 export type ChatSession = {
   id: string
+  sessionName: string
+  sessionKey: string
   createdAt: string
   updatedAt: string
   expiresAt: string
   conversation: SessionMessage[]
   lastJobId?: string
   activeJobCount: number
+  modelInitialized: boolean
+}
+
+type SessionCreationOptions = {
+  appName?: string
+  gatewayUsername?: string
+  requestedSessionId?: string
+  forceRequestedSessionId?: boolean
 }
 
 type SessionStoreEvent = {
@@ -91,7 +102,10 @@ const withSessionLock = async <T>(sessionId: string, task: () => T | Promise<T>)
   }
 }
 
-const createSession = (conversation: SessionMessage[] = []): ChatSession => {
+const createSession = (
+  conversation: SessionMessage[] = [],
+  options: Omit<SessionCreationOptions, "forceRequestedSessionId"> = {}
+): ChatSession => {
   if (sessionStore.size >= SESSION_CONFIG.maxConcurrentSessions) {
     const error = {
       code: "session_limit_exceeded",
@@ -101,14 +115,24 @@ const createSession = (conversation: SessionMessage[] = []): ChatSession => {
   }
 
   const now = nowMs()
+  const identity = buildSessionIdentity({
+    appName: options.appName,
+    username: options.gatewayUsername,
+    sessionId: options.requestedSessionId,
+  })
+  const sessionName = identity.sessionKey
+
   const createdAt = nowIso()
   return {
-    id: crypto.randomUUID(),
+    id: identity.sessionId,
+    sessionName,
+    sessionKey: identity.sessionKey,
     createdAt,
     updatedAt: createdAt,
     expiresAt: serializeDate(now + SESSION_CONFIG.maxAgeMs),
     conversation: normalizeConversation(conversation),
     activeJobCount: 0,
+    modelInitialized: false,
   }
 }
 
@@ -176,22 +200,39 @@ export const getSessionConversation = (sessionId: string): SessionMessage[] => {
 export const getOrCreateSession = async (
   requestedSessionId?: string,
   createNew = false,
-  incomingConversation: SessionMessage[] = []
+  incomingConversation: SessionMessage[] = [],
+  options: SessionCreationOptions = {}
 ): Promise<ChatSession> => {
   ensureSessionCleanup()
+  const effectiveSessionId = requestedSessionId ?? options.requestedSessionId
 
   if (!createNew) {
-    if (requestedSessionId) {
-      const existing = getChatSession(requestedSessionId)
+    if (effectiveSessionId) {
+      const existing = getChatSession(effectiveSessionId)
       if (existing) {
         return existing
+      }
+      if (options.forceRequestedSessionId) {
+        const seededSession = createSession(
+          createNew ? [] : incomingConversation,
+          {
+            ...options,
+            requestedSessionId: effectiveSessionId,
+          }
+        )
+        sessionStore.set(seededSession.id, seededSession)
+        emitSessionEvent({ event: "session_created", id: seededSession.id })
+        return clone(seededSession)
       }
     }
   }
 
   const conversationSeed =
     createNew || incomingConversation.length === 0 ? [] : incomingConversation
-  const session = createSession(conversationSeed)
+  const session = createSession(conversationSeed, {
+    ...options,
+    requestedSessionId: options.forceRequestedSessionId ? effectiveSessionId : undefined,
+  })
   sessionStore.set(session.id, session)
   emitSessionEvent({ event: "session_created", id: session.id })
   return clone(session)
@@ -211,6 +252,7 @@ export const resetChatSession = async (sessionId: string) => {
     const reset = {
       ...existing,
       conversation: [],
+      modelInitialized: false,
       lastJobId: undefined,
       updatedAt: nowIso(),
       expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
@@ -332,5 +374,23 @@ export const touchSession = async (sessionId: string) => {
     sessionStore.set(existing.id, touched)
     emitSessionEvent({ event: "session_touched", id: existing.id })
     return clone(touched)
+  })
+}
+
+export const setSessionModelInitialized = async (sessionId: string) => {
+  return withSessionLock(sessionId, () => {
+    const existing = getChatSession(sessionId)
+    if (!existing) {
+      return
+    }
+
+    const next = {
+      ...existing,
+      modelInitialized: true,
+      updatedAt: nowIso(),
+      expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
+    }
+    sessionStore.set(existing.id, next)
+    return clone(next)
   })
 }

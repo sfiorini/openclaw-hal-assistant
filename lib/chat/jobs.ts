@@ -165,7 +165,7 @@ const buildPollAfterMs = (status: ChatJobStatus, attemptCount = 0) => {
 const applyUpdate = (
   job: ChatJob,
   update: Partial<ChatJob>,
-  requestId?: string
+  _requestId?: string
 ): ChatJob => {
   const previousStatus = job.status
   const updatedAt = nowIso()
