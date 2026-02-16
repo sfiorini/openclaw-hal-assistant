@@ -69,6 +69,16 @@ pnpm docker:logs
 
 The compose stack maps `3000:3000`, uses `.env`, and includes a container health check on `/api/health/live`.
 
+Porcupine wake assets with compose:
+
+1. Drop Porcupine files in `wake-assets/` on the host:
+   - `wake-assets/porcupine_params.pv`
+   - `wake-assets/<your-keyword>.ppn` (optional if using built-in keyword)
+2. Compose mounts that folder read-only to `/app/public/wake`.
+3. Configure browser-fetchable paths in env:
+   - `OPENCLAW_WAKE_WORD_MODEL_PATH=/wake/porcupine_params.pv`
+   - `OPENCLAW_WAKE_WORD_KEYWORD_PATH=/wake/<your-keyword>.ppn` (optional)
+
 Run order in compose:
 
 1. Define all required values in `.env` (or export in your shell).
