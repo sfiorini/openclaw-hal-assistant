@@ -40,7 +40,7 @@ jobs:
         env:
           ELEVENLABS_API_KEY: ci-key
           ELEVENLABS_VOICE_ID: ci-voice-id
-          OPENCLAW_GATEWAY_URL: http://localhost:3000
+          OPENCLAW_GATEWAY_URL: ws://localhost:3000
           OPENCLAW_GATEWAY_TOKEN: ci-token
           OPENCLAW_RATE_LIMIT: 100
           OPENCLAW_AGENT_ID: main
@@ -57,7 +57,7 @@ jobs:
         env:
           ELEVENLABS_API_KEY: ci-key
           ELEVENLABS_VOICE_ID: ci-voice-id
-          OPENCLAW_GATEWAY_URL: http://localhost:3000
+          OPENCLAW_GATEWAY_URL: ws://localhost:3000
           OPENCLAW_GATEWAY_TOKEN: ci-token
           OPENCLAW_RATE_LIMIT: 100
           OPENCLAW_AGENT_ID: main
