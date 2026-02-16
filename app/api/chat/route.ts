@@ -66,16 +66,19 @@ const resolveSessionContext = async (payload: {
   )
 
   let message = parsed.message
-  if (!shouldCreateNewSession && !session.modelInitialized && payload.defaultAgentModel?.trim()) {
+  let usedDefaultModelBootstrap = false
+
+  if (!session.modelInitialized && payload.defaultAgentModel?.trim()) {
     const normalizedModel = payload.defaultAgentModel.trim()
     message = parsed.message.length > 0 ? `/new ${normalizedModel} ${parsed.message}` : `/new ${normalizedModel}`
-    await setSessionModelInitialized(session.id)
+    usedDefaultModelBootstrap = true
   }
 
   return {
     message,
     conversationHistory: session.conversation,
     sessionId: session.id,
+    usedDefaultModelBootstrap,
   }
 }
 
@@ -104,6 +107,10 @@ const resolveGatewayError = (error: unknown) => {
     },
   }
 }
+
+const normalizeMessageContent = (value: string) => value.trim()
+
+const fallbackAssistantText = "I am sorry, I could not generate a response."
 
 export async function OPTIONS(request: NextRequest) {
   return corsPreflightResponse(request)
@@ -166,25 +173,35 @@ export async function POST(request: NextRequest) {
     await getSessionForJobLimitCheck(sessionContext.sessionId)
     sessionLocked = true
 
+    const normalizedUserMessage = normalizeMessageContent(sessionContext.message)
+    if (!normalizedUserMessage.length) {
+      return buildJsonResponse(request, 400, {
+        error: "Message must not be empty",
+        code: "invalid_message",
+      })
+    }
+
     const result = await chatWithGateway({
       gatewayUrl: env.OPENCLAW_GATEWAY_URL,
       gatewayToken: env.OPENCLAW_GATEWAY_TOKEN,
+      agentId: env.OPENCLAW_AGENT_ID,
       conversationId: sessionContext.sessionId,
-      text: sessionContext.message,
+      text: normalizedUserMessage,
       timeoutMs: env.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS,
       maxRetryAttempts: env.OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS,
     })
     const responseSessionId = resolveResponseSessionId(result.conversationId, sessionContext.sessionId)
+    const normalizedAssistantMessage = normalizeMessageContent(result.text) || fallbackAssistantText
 
     const nextConversationHistory = [
       ...sessionContext.conversationHistory,
       {
         role: "user",
-        content: sessionContext.message,
+        content: normalizedUserMessage,
       },
       {
         role: "assistant",
-        content: result.text,
+        content: normalizedAssistantMessage,
       },
     ]
 
@@ -192,11 +209,11 @@ export async function POST(request: NextRequest) {
       await appendToSessionConversation(sessionContext.sessionId, [
         {
           role: "user",
-          content: sessionContext.message,
+          content: normalizedUserMessage,
         },
         {
           role: "assistant",
-          content: result.text,
+          content: normalizedAssistantMessage,
         },
       ])
     } catch (error) {
@@ -207,8 +224,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (sessionContext.usedDefaultModelBootstrap) {
+      try {
+        await setSessionModelInitialized(sessionContext.sessionId)
+      } catch (error) {
+        logger.warn(
+          `[${CHAT_OPERATION}] unable to persist model bootstrap state for session ${sessionContext.sessionId}: ${getErrorMessage(
+            error
+          )}`
+        )
+      }
+    }
+
     const responsePayload = chatResponseSchema.parse({
-      text: result.text,
+      text: normalizedAssistantMessage,
       conversationHistory: nextConversationHistory,
       sessionId: responseSessionId,
     })

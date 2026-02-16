@@ -19,6 +19,8 @@ type StartupHealthPayload = {
   }
 }
 
+const SOCKET_HEALTH_TIMEOUT_MS = 3000
+
 const normalizeGatewayBaseUrl = (value: string) => {
   const withoutTrailingSlash = value
     .trim()
@@ -31,7 +33,15 @@ const normalizeGatewayBaseUrl = (value: string) => {
   return withoutTrailingSlash
 }
 
-const buildGatewayUrl = (gatewayUrl: string, path: string) => {
+const normalizeGatewaySocketUrl = (value: string) => {
+  const trimmed = value.trim().replace(/\/+$/, "")
+  if (trimmed.endsWith("/v1")) {
+    return trimmed.slice(0, -3)
+  }
+  return trimmed
+}
+
+const buildGatewayHttpUrl = (gatewayUrl: string, path: string) => {
   const base = normalizeGatewayBaseUrl(gatewayUrl)
   return `${base}/v1${path}`
 }
@@ -60,7 +70,6 @@ const checkUrl = async (
 }
 
 const checkDependency = async (
-  _name: string,
   url: string,
   headers: Record<string, string> = {}
 ): Promise<DependencyCheck> => {
@@ -74,6 +83,59 @@ const checkDependency = async (
     }
   }
 }
+
+const checkGatewaySocket = async (gatewayUrl: string): Promise<DependencyCheck> => {
+  if (typeof WebSocket === "undefined") {
+    return {
+      status: "down",
+      latencyMs: 0,
+      error: "WebSocket is not available in this runtime",
+    }
+  }
+
+  const url = normalizeGatewaySocketUrl(gatewayUrl)
+  const startMs = Date.now()
+
+  return new Promise((resolve) => {
+    let settled = false
+    let timeoutHandle: NodeJS.Timeout | null = null
+
+    const finalize = (status: HealthStatus, error?: string) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle)
+      }
+      resolve({
+        status,
+        latencyMs: Date.now() - startMs,
+        ...(error ? { error } : {}),
+      })
+    }
+
+    try {
+      const socket = new WebSocket(url)
+      socket.addEventListener("open", () => {
+        socket.close()
+        finalize("up")
+      })
+      socket.addEventListener("error", () => {
+        finalize("down", "socket_error")
+      })
+
+      timeoutHandle = setTimeout(() => {
+        socket.close()
+        finalize("down", "socket_timeout")
+      }, SOCKET_HEALTH_TIMEOUT_MS)
+      timeoutHandle.unref?.()
+    } catch (error) {
+      finalize("down", error instanceof Error ? error.message : "Unknown error")
+    }
+  })
+}
+
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
 
 export async function GET() {
@@ -88,19 +150,22 @@ export async function GET() {
     )
   }
 
-  const [elevenLabs, openClaw] = await Promise.all([
-    checkDependency("elevenLabs", "https://api.elevenlabs.io/v1/user", {
+  const [elevenLabs, openClawSocket, openClawHttp] = await Promise.all([
+    checkDependency("https://api.elevenlabs.io/v1/user", {
       "xi-api-key": env.ELEVENLABS_API_KEY,
     }),
-    checkDependency("openClaw", buildGatewayUrl(env.OPENCLAW_GATEWAY_URL, "/models"), {
+    checkGatewaySocket(env.OPENCLAW_GATEWAY_URL),
+    checkDependency(buildGatewayHttpUrl(env.OPENCLAW_GATEWAY_URL, "/models"), {
       Authorization: `Bearer ${env.OPENCLAW_GATEWAY_TOKEN}`,
       "Content-Type": "application/json",
     }),
   ])
 
+  const openClaw = openClawSocket.status === "up" ? openClawSocket : openClawHttp
+
   const startupChecks = {
-    elevenLabs: elevenLabs,
-    openClaw: openClaw,
+    elevenLabs,
+    openClaw,
   }
 
   const healthy = Object.values(startupChecks).every((dependency) => dependency.status === "up")

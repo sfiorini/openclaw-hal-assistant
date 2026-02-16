@@ -24,7 +24,6 @@ export type ChatSession = {
   updatedAt: string
   expiresAt: string
   conversation: SessionMessage[]
-  lastJobId?: string
   activeJobCount: number
   modelInitialized: boolean
 }
@@ -41,9 +40,7 @@ type SessionStoreEvent = {
     | "session_created"
     | "session_reset"
     | "session_appended"
-    | "session_touched"
     | "session_job_count_changed"
-    | "session_job_assigned"
     | "session_cleaned"
   id: string
   reason?: string
@@ -80,12 +77,6 @@ const normalizeConversation = (conversation: Array<{ role: "user" | "assistant";
     .filter((item) => item && typeof item.content === "string" && item.content.trim().length > 0)
     .map((item) => normalizeMessage(item as { role: "user" | "assistant"; content: unknown }))
     .slice(-SESSION_CONFIG.maxConversationLength)
-
-const touchSessionInternal = (session: ChatSession, now = nowMs()): ChatSession => ({
-  ...session,
-  updatedAt: nowIso(),
-  expiresAt: serializeDate(now + SESSION_CONFIG.maxAgeMs),
-})
 
 const withSessionLock = async <T>(sessionId: string, task: () => T | Promise<T>): Promise<T> => {
   const previous = sessionLocks.get(sessionId) ?? Promise.resolve()
@@ -253,7 +244,6 @@ export const resetChatSession = async (sessionId: string) => {
       ...existing,
       conversation: [],
       modelInitialized: false,
-      lastJobId: undefined,
       updatedAt: nowIso(),
       expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
     }
@@ -311,7 +301,6 @@ export const getSessionForJobLimitCheck = async (sessionId: string): Promise<Cha
     const next = {
       ...existing,
       activeJobCount: existing.activeJobCount + 1,
-      lastJobId: existing.lastJobId,
       updatedAt: nowIso(),
       expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
     }
@@ -321,30 +310,7 @@ export const getSessionForJobLimitCheck = async (sessionId: string): Promise<Cha
   })
 }
 
-export const setSessionLastJobId = async (sessionId: string, jobId: string) => {
-  return withSessionLock(sessionId, () => {
-    const existing = getChatSession(sessionId)
-    if (!existing) {
-      const error = {
-        code: "session_not_found",
-        message: "Session does not exist",
-      }
-      throw error
-    }
-
-    const next = {
-      ...existing,
-      lastJobId: jobId,
-      updatedAt: nowIso(),
-      expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
-    }
-    sessionStore.set(existing.id, next)
-    emitSessionEvent({ event: "session_job_assigned", id: existing.id, reason: jobId })
-    return clone(next)
-  })
-}
-
-export const releaseSessionJobSlot = async (sessionId: string, jobId?: string) => {
+export const releaseSessionJobSlot = async (sessionId: string) => {
   return withSessionLock(sessionId, () => {
     const existing = getChatSession(sessionId)
     if (!existing) {
@@ -356,24 +322,10 @@ export const releaseSessionJobSlot = async (sessionId: string, jobId?: string) =
       activeJobCount: Math.max(0, existing.activeJobCount - 1),
       updatedAt: nowIso(),
       expiresAt: serializeDate(nowMs() + SESSION_CONFIG.maxAgeMs),
-      ...(jobId && existing.lastJobId === jobId ? { lastJobId: undefined } : {}),
     }
     sessionStore.set(existing.id, next)
     emitSessionEvent({ event: "session_job_count_changed", id: existing.id })
     return clone(next)
-  })
-}
-
-export const touchSession = async (sessionId: string) => {
-  return withSessionLock(sessionId, () => {
-    const existing = getChatSession(sessionId)
-    if (!existing) {
-      return
-    }
-    const touched = touchSessionInternal(existing)
-    sessionStore.set(existing.id, touched)
-    emitSessionEvent({ event: "session_touched", id: existing.id })
-    return clone(touched)
   })
 }
 

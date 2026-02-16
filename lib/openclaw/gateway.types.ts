@@ -24,6 +24,7 @@ export type GatewaySocketFactory = (url: string) => GatewaySocketLike
 export interface GatewayChatInput {
   gatewayUrl: string
   gatewayToken: string
+  agentId?: string
   deviceId?: string
   conversationId?: string
   text: string

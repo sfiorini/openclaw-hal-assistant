@@ -18,6 +18,9 @@ pnpm test:coverage
 pnpm test:e2e
 ```
 
+Prerequisite:
+- Ensure port `3000` is free before running E2E because Playwright starts its own dev server.
+
 ## Build and verification
 
 ```bash

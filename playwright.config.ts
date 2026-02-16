@@ -3,7 +3,8 @@ import { devices, defineConfig } from "@playwright/test"
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   use: {
     baseURL: "http://127.0.0.1:3000",
     trace: "on-first-retry",
@@ -20,8 +21,9 @@ export default defineConfig({
       ...process.env,
       NODE_OPTIONS:
         `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ""}--require ./tests/e2e/fetch-mock.cjs`,
-      OPENCLAW_GATEWAY_URL: "https://gateway.example.com",
+      OPENCLAW_GATEWAY_URL: "ws://gateway.example.com",
       OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+      OPENCLAW_SESSION_ID: "11111111-1111-4111-8111-111111111111",
       OPENCLAW_API_KEY: "",
       ELEVENLABS_API_KEY: "eleven-key",
       ELEVENLABS_VOICE_ID: "voice-id",

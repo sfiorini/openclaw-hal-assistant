@@ -85,6 +85,7 @@ describe("gateway client", () => {
     const request = chatWithGateway({
       gatewayUrl: "ws://gateway.example.com",
       gatewayToken: "gateway-token",
+      agentId: "assistant",
       conversationId: "11111111-1111-4111-8111-111111111111",
       text: "ping",
       socketFactory: factory.create,
@@ -109,7 +110,7 @@ describe("gateway client", () => {
     const chatId = String(chatFrame?.id)
     expect(chatFrame?.method).toBe("chat.send")
     expect((chatFrame?.params as Record<string, unknown>)?.sessionKey).toBe(
-      "agent:main:11111111-1111-4111-8111-111111111111"
+      "agent:assistant:11111111-1111-4111-8111-111111111111"
     )
 
     socket.emitMessage({
@@ -118,9 +119,6 @@ describe("gateway client", () => {
       ok: true,
       payload: { runId: "run-1", status: "started" },
     })
-
-    const waitFrame = await waitForFrame(factory, 0, 2)
-    expect(waitFrame?.method).toBe("agent.wait")
 
     socket.emitMessage({
       type: "event",
@@ -138,6 +136,119 @@ describe("gateway client", () => {
     await expect(request).resolves.toMatchObject({
       text: "pong",
       conversationId: "11111111-1111-4111-8111-111111111111",
+    })
+  })
+
+  it("ignores connect.challenge and still proceeds with chat", async () => {
+    const factory = new MockGatewaySocketFactory()
+    const request = chatWithGateway({
+      gatewayUrl: "ws://gateway.example.com",
+      gatewayToken: "gateway-token",
+      text: "ping",
+      socketFactory: factory.create,
+      maxRetryAttempts: 1,
+    })
+
+    const connectFrame = await waitForFrame(factory, 0, 0)
+    const socket = factory.sockets[0]
+    const connectId = String(connectFrame?.id)
+
+    socket.emitMessage({
+      type: "event",
+      event: "connect.challenge",
+      payload: {
+        nonce: "challenge-nonce",
+      },
+    })
+
+    socket.emitMessage({
+      type: "res",
+      id: connectId,
+      ok: true,
+      payload: { protocol: 3 },
+    })
+
+    const chatFrame = await waitForFrame(factory, 0, 1)
+    const chatId = String(chatFrame?.id)
+
+    socket.emitMessage({
+      type: "res",
+      id: chatId,
+      ok: true,
+      payload: { runId: "run-1", status: "started" },
+    })
+
+    socket.emitMessage({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-1",
+        state: "final",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "ready" }],
+        },
+      },
+    })
+
+    await expect(request).resolves.toMatchObject({
+      text: "ready",
+    })
+  })
+
+  it("continues normal flow when challenge event is emitted", async () => {
+    const factory = new MockGatewaySocketFactory()
+    const request = chatWithGateway({
+      gatewayUrl: "ws://gateway.example.com",
+      gatewayToken: "gateway-token",
+      text: "ping",
+      socketFactory: factory.create,
+      maxRetryAttempts: 1,
+    })
+
+    const connectFrame = await waitForFrame(factory, 0, 0)
+    const socket = factory.sockets[0]
+    const connectId = String(connectFrame?.id)
+
+    socket.emitMessage({
+      type: "event",
+      event: "connect.challenge",
+      payload: {
+        nonce: "challenge-nonce",
+      },
+    })
+
+    socket.emitMessage({
+      type: "res",
+      id: connectId,
+      ok: true,
+      payload: { protocol: 3 },
+    })
+
+    const chatFrame = await waitForFrame(factory, 0, 1)
+    const chatId = String(chatFrame?.id)
+    socket.emitMessage({
+      type: "res",
+      id: chatId,
+      ok: true,
+      payload: { runId: "run-1", status: "started" },
+    })
+
+    socket.emitMessage({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-1",
+        state: "final",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "signed ok" }],
+        },
+      },
+    })
+
+    await expect(request).resolves.toMatchObject({
+      text: "signed ok",
     })
   })
 
@@ -168,7 +279,7 @@ describe("gateway client", () => {
     })
   })
 
-  it("ignores events from unrelated runs", async () => {
+  it("ignores events from unrelated runs, including pre-ack events", async () => {
     const factory = new MockGatewaySocketFactory()
     const request = chatWithGateway({
       gatewayUrl: "ws://gateway.example.com",
@@ -191,6 +302,16 @@ describe("gateway client", () => {
 
     const chatFrame = await waitForFrame(factory, 0, 1)
     const chatId = String(chatFrame?.id)
+
+    socket.emitMessage({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-other",
+        state: "final",
+        message: { role: "assistant", content: [{ type: "text", text: "ignore me early" }] },
+      },
+    })
 
     socket.emitMessage({
       type: "res",

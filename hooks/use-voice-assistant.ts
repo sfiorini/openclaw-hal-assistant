@@ -22,6 +22,10 @@ interface UseVoiceAssistantOptions {
 }
 
 const SPEAKING_FALLBACK_TIMEOUT_MS = 4_000
+const RECORDING_MAX_DURATION_MS = 12_000
+const RECORDING_MIN_DURATION_MS = 800
+const RECORDING_SILENCE_WINDOW_MS = 2_400
+const RECORDING_VOICE_ACTIVITY_THRESHOLD = 0.012
 const OPENCLAW_SESSION_STORAGE_KEY = "openclaw_session_id"
 
 type WakeWordResult = {
@@ -117,6 +121,39 @@ const normalizeResultTranscript = (result: unknown) => {
   return typeof transcript === "string" ? transcript.trim() : null
 }
 
+const computeRms = (samples: Float32Array) => {
+  let sum = 0
+  for (let i = 0; i < samples.length; i += 1) {
+    const value = samples[i]
+    sum += value * value
+  }
+  return Math.sqrt(sum / samples.length)
+}
+
+const unlockBrowserAudio = () => {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const AudioCtor =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+
+  if (!AudioCtor) {
+    return
+  }
+
+  try {
+    const audioContext = new AudioCtor()
+    if (audioContext.state === "suspended") {
+      void audioContext.resume().catch(() => undefined)
+    }
+    void audioContext.close().catch(() => undefined)
+  } catch {
+    // best effort
+  }
+}
+
 const extractWakeText = (results: ArrayLike<WakeWordResult> | undefined, wakeWord: string) => {
   if (!results || typeof results.length !== "number") {
     return null
@@ -125,7 +162,7 @@ const extractWakeText = (results: ArrayLike<WakeWordResult> | undefined, wakeWor
   const wake = wakeWord.trim().toLowerCase()
   for (let i = 0; i < results.length; i += 1) {
     const result = results[i]
-    if (!result || !result.isFinal) {
+    if (!result) {
       continue
     }
 
@@ -218,20 +255,51 @@ export function useVoiceAssistant(
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+  const recordingTimeoutRef = useRef<number | null>(null)
+  const recordingSilenceRafRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const lastVoiceActivityMsRef = useRef<number>(0)
+  const recordingStartedAtMsRef = useRef<number>(0)
   const conversationHistoryRef = useRef<Message[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakingTimeoutRef = useRef<number | null>(null)
   const requestControllerRef = useRef<AbortController | null>(null)
   const wakeRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const wakeRecognitionActiveRef = useRef(false)
+  const hasUserGestureRef = useRef(false)
+  const wakeSuppressedRef = useRef(false)
   const stateRef = useRef(state)
 
   useEffect(() => {
     stateRef.current = state
+    wakeSuppressedRef.current = state !== "idle"
   }, [state])
 
   useEffect(() => {
     setWakeWordSupported(Boolean(resolveSpeechRecognitionCtor()))
   }, [wakeWordEnabled, wakeWord])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const markGesture = () => {
+      hasUserGestureRef.current = true
+      unlockBrowserAudio()
+    }
+
+    const onceOptions: AddEventListenerOptions = { passive: true, once: true }
+    window.addEventListener("pointerdown", markGesture, onceOptions)
+    window.addEventListener("keydown", markGesture, onceOptions)
+    window.addEventListener("touchstart", markGesture, onceOptions)
+
+    return () => {
+      window.removeEventListener("pointerdown", markGesture)
+      window.removeEventListener("keydown", markGesture)
+      window.removeEventListener("touchstart", markGesture)
+    }
+  }, [])
 
   const clearSpeakingTimeout = useCallback(() => {
     if (speakingTimeoutRef.current) {
@@ -244,6 +312,23 @@ export function useVoiceAssistant(
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
       streamRef.current = null
+    }
+  }, [])
+
+  const clearRecordingWatchdog = useCallback(() => {
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current)
+      recordingTimeoutRef.current = null
+    }
+
+    if (recordingSilenceRafRef.current) {
+      cancelAnimationFrame(recordingSilenceRafRef.current)
+      recordingSilenceRafRef.current = null
+    }
+
+    if (audioContextRef.current) {
+      void audioContextRef.current.close().catch(() => undefined)
+      audioContextRef.current = null
     }
   }, [])
 
@@ -294,13 +379,12 @@ export function useVoiceAssistant(
       return
     }
 
-    wakeRecognitionRef.current = null
-
-    recognition.onresult = null
-    recognition.onerror = null
-    recognition.onend = null
+    if (!wakeRecognitionActiveRef.current) {
+      return
+    }
 
     try {
+      wakeRecognitionActiveRef.current = false
       recognition.stop()
     } catch {
       // best effort
@@ -310,7 +394,7 @@ export function useVoiceAssistant(
   const processAudio = useCallback(
     async (audioBlob: Blob) => {
       stopMediaStream()
-      stopWakeRecognition()
+      wakeSuppressedRef.current = true
       setState("processing")
       setError("")
       setResponse("")
@@ -333,19 +417,22 @@ export function useVoiceAssistant(
         }
 
         const { text: userText } = await sttResponse.json()
-        if (!userText || !userText.trim().length) {
+        const normalizedUserText = typeof userText === "string" ? userText.trim() : ""
+        if (!normalizedUserText.length) {
           throw new Error("Could not understand the audio. Please try again.")
         }
 
-        setTranscript(userText)
+        setTranscript(normalizedUserText)
 
         const chatResponse = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: userText,
+            message: normalizedUserText,
             ...(sessionId ? { sessionId } : {}),
-            conversationHistory: conversationHistoryRef.current.slice(-CHAT_HISTORY_PAYLOAD_LIMIT),
+            conversationHistory: conversationHistoryRef.current
+              .filter((item) => item.content.trim().length > 0)
+              .slice(-CHAT_HISTORY_PAYLOAD_LIMIT),
           }),
           signal: requestController.signal,
         })
@@ -359,7 +446,9 @@ export function useVoiceAssistant(
         const chatPayload = parseChatSubmitResponse(payload)
 
         setSessionId(chatPayload.sessionId)
-        conversationHistoryRef.current = chatPayload.conversationHistory
+        conversationHistoryRef.current = chatPayload.conversationHistory.filter(
+          (item) => item.content.trim().length > 0
+        )
         setState("waiting_for_response")
         setResponse(chatPayload.text)
         setState("speaking")
@@ -408,6 +497,15 @@ export function useVoiceAssistant(
         const playResult = audio.play()
         if (playResult && typeof playResult.catch === "function") {
           playResult.catch((playError) => {
+            const isAutoplayBlock =
+              (playError instanceof DOMException && playError.name === "NotAllowedError") ||
+              (playError instanceof Error && /interact with the document first/i.test(playError.message))
+
+            if (isAutoplayBlock) {
+              completeSpeech()
+              return
+            }
+
             console.error("TTS playback failed, continuing without completion callback:", playError)
           })
         }
@@ -425,6 +523,71 @@ export function useVoiceAssistant(
     },
     [sessionId, stopMediaStream, stopWakeRecognition, clearSpeakingTimeout]
   )
+
+  const stopRecording = useCallback(() => {
+    clearRecordingWatchdog()
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop()
+    }
+  }, [clearRecordingWatchdog])
+
+  const startRecordingWatchdog = useCallback(() => {
+    if (typeof window === "undefined" || !streamRef.current) {
+      return
+    }
+
+    recordingStartedAtMsRef.current = Date.now()
+    lastVoiceActivityMsRef.current = recordingStartedAtMsRef.current
+
+    recordingTimeoutRef.current = window.setTimeout(() => {
+      if (stateRef.current === "recording") {
+        stopRecording()
+      }
+    }, RECORDING_MAX_DURATION_MS)
+
+    const AudioCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtor) {
+      return
+    }
+
+    try {
+      const audioContext = new AudioCtor()
+      const source = audioContext.createMediaStreamSource(streamRef.current)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 2048
+      source.connect(analyser)
+      audioContextRef.current = audioContext
+
+      const samples = new Float32Array(analyser.fftSize)
+
+      const tick = () => {
+        if (stateRef.current !== "recording") {
+          return
+        }
+
+        analyser.getFloatTimeDomainData(samples)
+        const rms = computeRms(samples)
+        if (rms >= RECORDING_VOICE_ACTIVITY_THRESHOLD) {
+          lastVoiceActivityMsRef.current = Date.now()
+        }
+
+        const now = Date.now()
+        const elapsed = now - recordingStartedAtMsRef.current
+        const silenceMs = now - lastVoiceActivityMsRef.current
+
+        if (elapsed >= RECORDING_MIN_DURATION_MS && silenceMs >= RECORDING_SILENCE_WINDOW_MS) {
+          stopRecording()
+          return
+        }
+
+        recordingSilenceRafRef.current = window.requestAnimationFrame(tick)
+      }
+
+      recordingSilenceRafRef.current = window.requestAnimationFrame(tick)
+    } catch {
+      // Keep max-duration watchdog even if audio analysis is unavailable.
+    }
+  }, [stopRecording])
 
   const startRecording = useCallback(async () => {
     try {
@@ -456,19 +619,15 @@ export function useVoiceAssistant(
 
       mediaRecorderRef.current = mediaRecorder
       mediaRecorder.start()
+      stateRef.current = "recording"
       setState("recording")
+      startRecordingWatchdog()
     } catch (recordError) {
       console.error("Failed to start recording:", recordError)
       setError("Microphone access denied. Please allow microphone access and try again.")
       setState("idle")
     }
-  }, [processAudio])
-
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop()
-    }
-  }, [])
+  }, [processAudio, startRecordingWatchdog])
 
   const abortAndReset = useCallback(() => {
     stopCurrentRequest()
@@ -484,41 +643,58 @@ export function useVoiceAssistant(
       return
     }
 
+    if (!hasUserGestureRef.current) {
+      return
+    }
+
     if (stateRef.current !== "idle") {
       return
     }
 
-    if (wakeRecognitionRef.current) {
+    if (wakeRecognitionActiveRef.current) {
       return
     }
 
-    const recognition = new constructor()
+    const recognition = wakeRecognitionRef.current ?? new constructor()
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = "en-US"
 
     recognition.onresult = (event: { results: ArrayLike<WakeWordResult> }) => {
+      if (wakeSuppressedRef.current) {
+        return
+      }
+
       const detected = extractWakeText(event.results, wakeWord)
       if (!detected) {
         return
       }
 
-      stopWakeRecognition()
+      wakeSuppressedRef.current = true
 
       if (stateRef.current !== "idle") {
         return
       }
 
+      stateRef.current = "recording"
+      stopWakeRecognition()
       void startRecording()
     }
 
-    recognition.onerror = () => {
-      stopWakeRecognition()
+    recognition.onerror = (event: { error?: unknown }) => {
+      wakeRecognitionActiveRef.current = false
+      const errorCode = typeof event?.error === "string" ? event.error : "unknown"
+      if (errorCode === "not-allowed" || errorCode === "service-not-allowed") {
+        return
+      }
+      if (wakeWordEnabled && stateRef.current === "idle" && !wakeRecognitionActiveRef.current) {
+        startWakeRecognition()
+      }
     }
 
     recognition.onend = () => {
-      wakeRecognitionRef.current = null
-      if (wakeWordEnabled && stateRef.current === "idle") {
+      wakeRecognitionActiveRef.current = false
+      if (wakeWordEnabled && stateRef.current === "idle" && !wakeRecognitionActiveRef.current) {
         startWakeRecognition()
       }
     }
@@ -526,9 +702,10 @@ export function useVoiceAssistant(
     wakeRecognitionRef.current = recognition
 
     try {
+      wakeRecognitionActiveRef.current = true
       recognition.start()
     } catch {
-      stopWakeRecognition()
+      wakeRecognitionActiveRef.current = false
     }
   }, [startRecording, stopWakeRecognition, wakeWord, wakeWordEnabled])
 
@@ -549,14 +726,19 @@ export function useVoiceAssistant(
     setWakeWordSupported(true)
 
     if (state === "idle") {
-      startWakeRecognition()
-    } else {
-      stopWakeRecognition()
+      if (!wakeRecognitionActiveRef.current) {
+        startWakeRecognition()
+      }
+      return
     }
+
+    stopWakeRecognition()
   }, [state, wakeWordEnabled, wakeWord, startWakeRecognition, stopWakeRecognition])
 
   const toggleRecording = useCallback(() => {
     if (state === "idle") {
+      hasUserGestureRef.current = true
+      unlockBrowserAudio()
       startRecording()
       return
     }
@@ -572,6 +754,8 @@ export function useVoiceAssistant(
     }
 
     if (state === "speaking") {
+      hasUserGestureRef.current = true
+      unlockBrowserAudio()
       stopPlayback()
       startRecording()
       return
@@ -583,14 +767,23 @@ export function useVoiceAssistant(
   useEffect(() => {
     return () => {
       stopWakeRecognition()
+      wakeRecognitionRef.current = null
+      wakeRecognitionActiveRef.current = false
       stopCurrentRequest()
+      clearRecordingWatchdog()
       stopMediaStream()
       stopPlayback()
       if (audioRef.current) {
         URL.revokeObjectURL(audioRef.current.src)
       }
     }
-  }, [stopCurrentRequest, stopMediaStream, stopPlayback, stopWakeRecognition])
+  }, [
+    clearRecordingWatchdog,
+    stopCurrentRequest,
+    stopMediaStream,
+    stopPlayback,
+    stopWakeRecognition,
+  ])
 
   return {
     state,

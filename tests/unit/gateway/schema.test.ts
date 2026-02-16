@@ -6,6 +6,7 @@ import {
   gatewayChatEventSchema,
   gatewayChatSendRequestSchema,
   gatewayConnectChallengeSchema,
+  gatewayConnectRespondSchema,
   gatewayConnectRequestSchema,
   gatewayIncomingMessageSchema,
   gatewayOutgoingMessageSchema,
@@ -47,6 +48,19 @@ describe("gateway schemas", () => {
     })
 
     expect(parsed.payload.nonce).toBe("abc-123")
+  })
+
+  it("validates connect.respond payload", () => {
+    const parsed = gatewayConnectRespondSchema.parse({
+      id: "challenge-1",
+      type: "req",
+      method: "connect.respond",
+      params: {
+        response: "signed-response",
+      },
+    })
+
+    expect(parsed.params.response).toBe("signed-response")
   })
 
   it("validates chat.send payload", () => {

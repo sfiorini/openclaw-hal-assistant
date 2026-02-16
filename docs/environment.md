@@ -35,6 +35,14 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
   - `sessionId`
   - `conversationHistory`
 - `sessionId` is returned by `/api/chat` and reused by the frontend across page reloads (stored in localStorage).
+- Session selection precedence:
+  - `newSession=true` or `/new`/`/reset` command starts a fresh session.
+  - Otherwise, request `sessionId` is used when present.
+  - Otherwise, `OPENCLAW_SESSION_ID` is used when configured.
+  - Otherwise, a generated UUID session is created.
+- Wake-word mode uses continuous browser speech recognition, which can increase CPU/battery usage. Disable with `OPENCLAW_WAKE_WORD_ENABLED=false` when needed.
+- In some browsers, wake-word listening/audio playback require one initial user interaction. Any first click/tap/key press now unlocks this automatically.
+- Recording now auto-stops after silence (or max duration) for wake/manual flows.
 
 ## Using `.env`
 

@@ -19,7 +19,7 @@
   - Returns `{ status: "ok", timestamp }`.
 
 - `GET /api/health/startup`
-  - Checks ElevenLabs (`GET /v1/user`) and OpenClaw (`GET /v1/models`).
+  - Checks ElevenLabs (`GET /v1/user`) and OpenClaw gateway availability (`ws://`/`wss://` handshake with HTTP `/v1/models` fallback).
   - Returns `200` when healthy.
   - Returns `503` when any dependency is unhealthy.
 
@@ -50,6 +50,11 @@
     - `newSession` (optional, default `false`) starts a new session
     - `conversationHistory` (optional, max 20 messages) used when `sessionId` is not valid/unknown
       - ignored when the session can be resolved server-side
+  - Session precedence:
+    - if `newSession=true` or message starts with `/new` or `/reset`: create a fresh session
+    - else if request `sessionId` is provided: reuse that session
+    - else if `OPENCLAW_SESSION_ID` is configured: reuse that configured session
+    - else: create a generated session
   - Success: `200` with synchronous response
     - `text`: assistant text
     - `sessionId`: UUID associated with this conversation context
@@ -58,6 +63,8 @@
     - `"/new <message>"` starts a new session and strips the command
     - `"/reset"` starts a new empty session (with any remainder text removed)
     - `/NEW` and `/RESET` are treated as normal text (case-sensitive)
+  - Errors: `400`, `401`, `429`, `502`, `503`, `504`
+    - `400` includes `code: "invalid_message"` when normalized user message is empty.
 
 ### OpenAPI/docs
 

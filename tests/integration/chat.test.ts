@@ -253,6 +253,44 @@ describe("Chat direct response", () => {
     expect(firstCall[0].text).toBe("hal-test-model start")
   })
 
+  it("bootstraps default model only on the first turn of a session", async () => {
+    const previousDefaultModel = process.env.OPENCLAW_DEFAULT_AGENT_MODEL
+    process.env.OPENCLAW_DEFAULT_AGENT_MODEL = "hal-default-model"
+
+    const seenTexts: string[] = []
+
+    vi.mocked(chatWithGateway).mockImplementation(async (input) => {
+      seenTexts.push(input.text)
+      return {
+        text: `reply:${input.text}`,
+        conversationId:
+          input.conversationId ?? "5ca7c3be-640f-4e90-9f3e-7d1c7c0a2c0d",
+      }
+    })
+
+    const first = await POST(createChatRequest({ message: "Hello there" }))
+    const firstPayload = await first.json()
+
+    expect(first.status).toBe(200)
+    expect(seenTexts[0]).toBe("/new hal-default-model Hello there")
+
+    const second = await POST(
+      createChatRequest({
+        message: "Tell me more",
+        sessionId: firstPayload.sessionId,
+      })
+    )
+
+    expect(second.status).toBe(200)
+    expect(seenTexts[1]).toBe("Tell me more")
+
+    if (previousDefaultModel) {
+      process.env.OPENCLAW_DEFAULT_AGENT_MODEL = previousDefaultModel
+    } else {
+      delete process.env.OPENCLAW_DEFAULT_AGENT_MODEL
+    }
+  })
+
   it("returns 503 when session max concurrent jobs is reached", async () => {
     const hold = deferred<{ text: string; conversationId: string }>()
     const firstStarted = deferred<string>()

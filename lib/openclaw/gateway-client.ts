@@ -72,9 +72,11 @@ const sleep = (ms: number) =>
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
 
-const resolveGatewaySessionKey = (conversationId?: string) => {
+const resolveGatewaySessionKey = (conversationId?: string, agentId = "main") => {
+  const normalizedAgentId = agentId.trim() || "main"
+
   if (!conversationId || !conversationId.trim()) {
-    return "agent:main:main"
+    return `agent:${normalizedAgentId}:main`
   }
 
   const trimmed = conversationId.trim()
@@ -82,7 +84,20 @@ const resolveGatewaySessionKey = (conversationId?: string) => {
     return trimmed
   }
 
-  return `agent:main:${trimmed}`
+  return `agent:${normalizedAgentId}:${trimmed}`
+}
+
+const extractConversationIdFromSessionKey = (sessionKey?: string) => {
+  if (!sessionKey) {
+    return null
+  }
+
+  const match = /^agent:[^:]+:(.+)$/u.exec(sessionKey.trim())
+  if (!match) {
+    return null
+  }
+
+  return match[1]?.trim() || null
 }
 
 const extractChatText = (payload: unknown): string | null => {
@@ -201,6 +216,7 @@ const connectAndChat = async (
   socket: ReturnType<GatewaySocketFactory>,
   input: {
     gatewayToken: string
+    agentId?: string
     conversationId?: string
     metadata?: Record<string, unknown>
     text: string
@@ -209,14 +225,19 @@ const connectAndChat = async (
 ): Promise<GatewayChatResult> => {
   const connectRequestId = randomId()
   const chatRequestId = randomId()
-  const waitRequestId = randomId()
-  const sessionKey = resolveGatewaySessionKey(input.conversationId)
+  const sessionKey = resolveGatewaySessionKey(input.conversationId, input.agentId)
+  const fallbackConversationId =
+    input.conversationId ?? extractConversationIdFromSessionKey(sessionKey) ?? sessionKey
 
   const state = {
     connected: false,
+    connectRequestDispatched: false,
+    chatRequestAcknowledged: false,
     runId: null as string | null,
     completeText: null as string | null,
     partialText: "",
+    resolvedConversationId: fallbackConversationId,
+    queuedEvents: [] as GatewayIncomingMessage[],
     completeResolver: null as ((value: GatewayChatResult) => void) | null,
     completeRejector: null as ((error: unknown) => void) | null,
     openResolver: null as (() => void) | null,
@@ -250,7 +271,7 @@ const connectAndChat = async (
 
   const buildResult = (): GatewayChatResult => ({
     text: state.completeText || state.partialText,
-    conversationId: input.conversationId ?? sessionKey,
+    conversationId: state.resolvedConversationId,
     partialText: state.partialText,
   })
 
@@ -282,100 +303,72 @@ const connectAndChat = async (
     )
   }
 
-  const shouldTrackRunId = (runId: string | null | undefined) => {
-    if (!runId) {
+  const matchesSessionKey = (candidate?: string) => !candidate || candidate === sessionKey
+
+  const shouldTrackRunId = (runId: string | null | undefined, candidateSessionKey?: string) => {
+    if (!matchesSessionKey(candidateSessionKey)) {
       return false
     }
-    if (!state.runId) {
+
+    if (!runId) {
       return true
     }
+
+    if (!state.runId) {
+      if (!state.chatRequestAcknowledged) {
+        return false
+      }
+      state.runId = runId
+      return true
+    }
+
     return state.runId === runId
   }
 
-  const handleMessage = (event: MessageEvent | Event) => {
+  const updateConversationFromSessionKey = (candidate?: string) => {
+    if (!candidate || !matchesSessionKey(candidate)) {
+      return
+    }
+
+    const parsed = extractConversationIdFromSessionKey(candidate)
+    if (parsed) {
+      state.resolvedConversationId = parsed
+    }
+  }
+
+  const flushQueuedEvents = () => {
+    if (!state.chatRequestAcknowledged || state.queuedEvents.length === 0 || state.done) {
+      return
+    }
+
+    const queued = [...state.queuedEvents]
+    state.queuedEvents = []
+
+    for (const queuedEvent of queued) {
+      if (state.done) {
+        break
+      }
+      handleParsedMessage(queuedEvent, true)
+    }
+  }
+
+  const handleParsedMessage = (parsed: GatewayIncomingMessage, fromQueue = false) => {
     if (state.done) {
       return
     }
 
-    const parsed = parseIncomingMessage((event as MessageEvent).data)
-
     if (gatewayConnectChallengeSchema.safeParse(parsed).success) {
+      // Some gateway builds emit this event but do not support connect.respond.
+      // Treat it as informational for compatibility.
       return
     }
 
     if (gatewayConnectedEventSchema.safeParse(parsed).success) {
+      if (!state.connectRequestDispatched) {
+        return
+      }
+
       state.connected = true
-      return
-    }
-
-    if (gatewayChatTokenEventSchema.safeParse(parsed).success) {
-      const tokenPayload = gatewayChatTokenEventSchema.parse(parsed)
-      state.partialText = upsertPartialText(state.partialText, tokenPayload.payload.token, undefined)
-      return
-    }
-
-    if (gatewayChatCompleteEventSchema.safeParse(parsed).success) {
-      const completePayload = gatewayChatCompleteEventSchema.parse(parsed)
-      state.completeText = completePayload.payload.text
-      finalize(buildResult())
-      return
-    }
-
-    if (gatewayAgentEventSchema.safeParse(parsed).success) {
-      const agentPayload = gatewayAgentEventSchema.parse(parsed)
-      if (!shouldTrackRunId(agentPayload.payload.runId)) {
-        return
-      }
-
-      if (!state.runId) {
-        state.runId = agentPayload.payload.runId
-      }
-
-      if (agentPayload.payload.stream === "assistant") {
-        const data = agentPayload.payload.data
-        const delta = typeof data?.delta === "string" ? data.delta : undefined
-        const text = typeof data?.text === "string" ? data.text : undefined
-        state.partialText = upsertPartialText(state.partialText, delta, text)
-        return
-      }
-
-      if (
-        agentPayload.payload.stream === "lifecycle" &&
-        agentPayload.payload.data &&
-        typeof agentPayload.payload.data === "object" &&
-        (agentPayload.payload.data as { phase?: unknown }).phase === "end"
-      ) {
-        if (!state.completeText && state.partialText.trim().length > 0) {
-          finalize(buildResult())
-        }
-        return
-      }
-
-      return
-    }
-
-    if (gatewayChatEventSchema.safeParse(parsed).success) {
-      const chatPayload = gatewayChatEventSchema.parse(parsed)
-      const runId = chatPayload.payload.runId
-      if (!shouldTrackRunId(runId)) {
-        return
-      }
-      if (!state.runId && runId) {
-        state.runId = runId
-      }
-
-      const extractedText = extractChatText(chatPayload.payload)
-      if (chatPayload.payload.state === "final") {
-        if (extractedText) {
-          state.completeText = extractedText
-        }
-        finalize(buildResult())
-        return
-      }
-
-      if (extractedText) {
-        state.partialText = upsertPartialText(state.partialText, undefined, extractedText)
-      }
       return
     }
 
@@ -438,40 +431,119 @@ const connectAndChat = async (
             ? (payload as { runId: string }).runId
             : null
 
+        state.chatRequestAcknowledged = true
         if (runId) {
           state.runId = runId
-          sendFrame(socket, {
-            id: waitRequestId,
-            type: "req",
-            method: "agent.wait",
-            params: {
-              runId,
-            },
-          })
+        }
+
+        if (payload && typeof payload === "object") {
+          const conversationId = (payload as { conversationId?: unknown }).conversationId
+          if (typeof conversationId === "string" && conversationId.trim()) {
+            state.resolvedConversationId = conversationId
+          }
+
+          const responseSessionKey = (payload as { sessionKey?: unknown }).sessionKey
+          if (typeof responseSessionKey === "string") {
+            updateConversationFromSessionKey(responseSessionKey)
+          }
+        }
+
+        flushQueuedEvents()
+        return
+      }
+      return
+    }
+
+    const isChatRelatedEvent =
+      gatewayChatTokenEventSchema.safeParse(parsed).success ||
+      gatewayChatCompleteEventSchema.safeParse(parsed).success ||
+      gatewayAgentEventSchema.safeParse(parsed).success ||
+      gatewayChatEventSchema.safeParse(parsed).success
+
+    if (isChatRelatedEvent && !state.chatRequestAcknowledged && !fromQueue) {
+      state.queuedEvents.push(parsed)
+      return
+    }
+
+    if (gatewayChatTokenEventSchema.safeParse(parsed).success) {
+      const tokenPayload = gatewayChatTokenEventSchema.parse(parsed)
+      state.partialText = upsertPartialText(state.partialText, tokenPayload.payload.token, undefined)
+      return
+    }
+
+    if (gatewayChatCompleteEventSchema.safeParse(parsed).success) {
+      const completePayload = gatewayChatCompleteEventSchema.parse(parsed)
+      state.completeText = completePayload.payload.text
+      if (completePayload.payload.conversationId?.trim()) {
+        state.resolvedConversationId = completePayload.payload.conversationId
+      }
+      finalize(buildResult())
+      return
+    }
+
+    if (gatewayAgentEventSchema.safeParse(parsed).success) {
+      const agentPayload = gatewayAgentEventSchema.parse(parsed)
+      if (!shouldTrackRunId(agentPayload.payload.runId, agentPayload.payload.sessionKey)) {
+        return
+      }
+
+      updateConversationFromSessionKey(agentPayload.payload.sessionKey)
+
+      if (agentPayload.payload.stream === "assistant") {
+        const data = agentPayload.payload.data
+        const delta = typeof data?.delta === "string" ? data.delta : undefined
+        const text = typeof data?.text === "string" ? data.text : undefined
+        state.partialText = upsertPartialText(state.partialText, delta, text)
+        return
+      }
+
+      if (
+        agentPayload.payload.stream === "lifecycle" &&
+        agentPayload.payload.data &&
+        typeof agentPayload.payload.data === "object" &&
+        (agentPayload.payload.data as { phase?: unknown }).phase === "end"
+      ) {
+        if (!state.completeText && state.partialText.trim().length > 0) {
+          finalize(buildResult())
         }
         return
       }
 
-      if (response.id === waitRequestId) {
-        if (error || ok === false) {
-          rejectWith(
-            new GatewayClientError(error?.message || "Gateway wait request failed", {
-              code: "upstream",
-              details: { code: error?.code, details: error?.details },
-              partialText: state.partialText,
-              retryable: false,
-            })
-          )
-          return
-        }
+      return
+    }
 
-        if ((state.completeText || state.partialText).trim().length > 0) {
-          finalize(buildResult())
-          return
+    if (gatewayChatEventSchema.safeParse(parsed).success) {
+      const chatPayload = gatewayChatEventSchema.parse(parsed)
+      const runId = chatPayload.payload.runId
+      if (!shouldTrackRunId(runId, chatPayload.payload.sessionKey)) {
+        return
+      }
+
+      updateConversationFromSessionKey(chatPayload.payload.sessionKey)
+
+      const extractedText = extractChatText(chatPayload.payload)
+      if (chatPayload.payload.state === "final") {
+        if (extractedText) {
+          state.completeText = extractedText
         }
+        finalize(buildResult())
+        return
+      }
+
+      if (extractedText) {
+        state.partialText = upsertPartialText(state.partialText, undefined, extractedText)
       }
       return
     }
+  }
+
+  const handleMessage = (event: MessageEvent | Event) => {
+    if (state.done) {
+      return
+    }
+
+    const parsed = parseIncomingMessage((event as MessageEvent).data)
+    handleParsedMessage(parsed)
   }
 
   socket.addEventListener("open", onOpen)
@@ -512,18 +584,18 @@ const connectAndChat = async (
         mode: "node",
       },
       role: "operator",
-      scopes: ["operator.read", "operator.write"],
-      caps: [],
-      commands: [],
-      permissions: {},
+      scopes: ["operator.read", "operator.write", "operator.admin"],
       auth: {
         token: input.gatewayToken,
       },
       locale: "en-US",
       userAgent: "openclaw-hal-assistant/1.0.0",
-      ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+      ...(input.deviceId?.trim()
+        ? { deviceId: input.deviceId.trim() }
+        : {}),
     },
   })
+  state.connectRequestDispatched = true
 
   while (!state.connected) {
     if (state.done) {
@@ -570,6 +642,7 @@ export const chatWithGateway = async (input: GatewayChatInput): Promise<GatewayC
           execute: (socket) =>
             connectAndChat(socket, {
               gatewayToken: cfg.gatewayToken,
+              agentId: cfg.agentId,
               conversationId: cfg.conversationId,
               metadata: cfg.metadata,
               text: cfg.text,
