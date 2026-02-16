@@ -4,9 +4,20 @@ import { HalEye } from "./hal-eye"
 import { HalStatus } from "./hal-status"
 import { useVoiceAssistant } from "@/hooks/use-voice-assistant"
 
-export function HalPanel() {
-  const { state, transcript, response, error, toggleRecording } =
-    useVoiceAssistant()
+interface HalPanelProps {
+  wakeWordEnabled: boolean
+  wakeWord: string
+}
+
+export function HalPanel({ wakeWordEnabled, wakeWord }: HalPanelProps) {
+  const {
+    state,
+    transcript,
+    response,
+    error,
+    toggleRecording,
+    wakeWordSupported,
+  } = useVoiceAssistant({ wakeWordEnabled, wakeWord })
 
   return (
     <main className="relative flex h-[100svh] min-h-[100svh] flex-col items-center bg-background px-4 py-5 overflow-hidden">
@@ -36,7 +47,7 @@ export function HalPanel() {
         <HalEye
           state={state}
           onClick={toggleRecording}
-          disabled={state === "processing" || state === "speaking"}
+          disabled={state === "processing"}
         />
         <div className="w-full min-h-0 flex-1 overflow-hidden">
           <HalStatus
@@ -44,6 +55,8 @@ export function HalPanel() {
             transcript={transcript}
             response={response}
             error={error}
+            wakeWordEnabled={wakeWordEnabled}
+            wakeWordSupported={wakeWordSupported}
           />
         </div>
       </div>

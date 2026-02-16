@@ -8,6 +8,8 @@ interface HalStatusProps {
   transcript?: string
   response?: string
   error?: string
+  wakeWordEnabled?: boolean
+  wakeWordSupported?: boolean
 }
 
 const stateLabels: Record<HalState, string> = {
@@ -26,7 +28,21 @@ const stateDescriptions: Record<HalState, string> = {
   speaking: "HAL is responding...",
 }
 
-export function HalStatus({ state, transcript, response, error }: HalStatusProps) {
+export function HalStatus({
+  state,
+  transcript,
+  response,
+  error,
+  wakeWordEnabled,
+  wakeWordSupported,
+}: HalStatusProps) {
+  const fallbackMessage =
+    wakeWordEnabled === false
+      ? "Wake word disabled; manual mode is active."
+      : wakeWordEnabled && wakeWordSupported === false
+        ? "Wake word unavailable; manual mode is active."
+        : null
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col items-stretch gap-5 px-2 sm:px-4">
       {/* Status indicator */}
@@ -50,6 +66,12 @@ export function HalStatus({ state, transcript, response, error }: HalStatusProps
       <p className="shrink-0 font-mono text-xs text-muted-foreground tracking-wider text-center">
         {stateDescriptions[state]}
       </p>
+
+      {fallbackMessage && (
+        <p className="shrink-0 rounded-md border border-dashed border-muted px-3 py-2 text-[10px] text-muted-foreground/70 tracking-wide text-center">
+          {fallbackMessage}
+        </p>
+      )}
 
       {/* Error message */}
       {error && (

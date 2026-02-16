@@ -14,7 +14,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
   return (
     <button
       onClick={onClick}
-        disabled={disabled && state !== "waiting_for_response"}
+      disabled={disabled}
       aria-label={
         state === "recording"
           ? "Stop recording"
@@ -27,7 +27,7 @@ export function HalEye({ state, onClick, disabled = false }: HalEyeProps) {
         "w-36 h-36 md:w-48 md:h-48 lg:w-56 lg:h-56",
         "rounded-full cursor-pointer transition-all duration-300",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-hal-red focus-visible:ring-offset-4 focus-visible:ring-offset-background",
-        disabled && state !== "processing" && state !== "speaking" && "opacity-50 cursor-not-allowed",
+        disabled && "opacity-50 cursor-not-allowed",
       )}
     >
       {/* Outer metallic ring */}

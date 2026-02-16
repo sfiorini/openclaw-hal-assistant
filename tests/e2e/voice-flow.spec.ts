@@ -26,7 +26,7 @@ test.describe("voice flow", () => {
     await stopButton.click()
 
     await expect(processingState).toBeVisible()
-    await expect(waitingState).toBeVisible({ timeout: 5000 })
+    await expect(waitingState.or(speakingState)).toBeVisible({ timeout: 5000 })
     await expect(speakingState).toBeVisible({ timeout: 5000 })
     await expect(readyState).toBeVisible({ timeout: 5000 })
     await expect(page.getByText("You said:")).toBeVisible()
@@ -67,5 +67,31 @@ test.describe("voice flow", () => {
     )
     expect(restoredSessionId).toBe(storedSessionId)
     await expect(page.getByText("READY")).toBeVisible()
+  })
+
+  test("interrupts speaking when eye is clicked", async ({ page }) => {
+    await installBrowserApiMocks(page, {
+      sttText: "Tell me a status update",
+      chatText: "HAL is fully operational.",
+      audioHex: "49443303",
+    })
+
+    await page.goto("/")
+    const eyeButton = page.getByRole("button").first()
+    const readyState = page.getByText("READY")
+    const recordingState = page.getByText("RECORDING")
+    const speakingState = page.getByText("SPEAKING")
+
+    await expect(readyState).toBeVisible()
+    await eyeButton.click()
+    await expect(recordingState).toBeVisible()
+
+    const stopButton = page.getByRole("button", { name: /stop recording/i })
+    await stopButton.click()
+
+    await expect(speakingState).toBeVisible({ timeout: 10000 })
+
+    await eyeButton.click()
+    await expect(recordingState).toBeVisible({ timeout: 5000 })
   })
 })

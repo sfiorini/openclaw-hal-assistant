@@ -12,10 +12,50 @@ interface UseVoiceAssistantReturn {
   response: string
   error: string
   toggleRecording: () => void
+  wakeWordEnabled: boolean
+  wakeWordSupported: boolean
+}
+
+interface UseVoiceAssistantOptions {
+  wakeWordEnabled?: boolean
+  wakeWord?: string
 }
 
 const SPEAKING_FALLBACK_TIMEOUT_MS = 4_000
 const OPENCLAW_SESSION_STORAGE_KEY = "openclaw_session_id"
+
+type WakeWordResult = {
+  isFinal?: boolean
+  0?: {
+    transcript?: unknown
+  }
+}
+
+type SpeechRecognitionLike = {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onresult: ((event: { results: ArrayLike<WakeWordResult> }) => void) | null
+  onerror: ((event: { error?: unknown }) => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+}
+
+type SpeechRecognitionLikeCtor = new () => SpeechRecognitionLike
+
+const resolveSpeechRecognitionCtor = (): SpeechRecognitionLikeCtor | null => {
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionLikeCtor
+    webkitSpeechRecognition?: SpeechRecognitionLikeCtor
+  }
+
+  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null
+}
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -62,6 +102,47 @@ const parseChatSubmitResponse = (payload: unknown): ChatSubmitResponse => {
   }
 }
 
+const normalizeResultTranscript = (result: unknown) => {
+  if (!result || typeof result !== "object") {
+    return null
+  }
+
+  const candidate = result as {
+    0?: {
+      transcript?: unknown
+    }
+  }
+
+  const transcript = candidate[0]?.transcript
+  return typeof transcript === "string" ? transcript.trim() : null
+}
+
+const extractWakeText = (results: ArrayLike<WakeWordResult> | undefined, wakeWord: string) => {
+  if (!results || typeof results.length !== "number") {
+    return null
+  }
+
+  const wake = wakeWord.trim().toLowerCase()
+  for (let i = 0; i < results.length; i += 1) {
+    const result = results[i]
+    if (!result || !result.isFinal) {
+      continue
+    }
+
+    const transcript = normalizeResultTranscript(result)
+    if (!transcript) {
+      continue
+    }
+
+    const normalized = transcript.toLowerCase()
+    if (normalized.includes(wake)) {
+      return normalized
+    }
+  }
+
+  return null
+}
+
 const readApiErrorMessage = async (response: Response, fallbackMessage: string) => {
   const contentType = response.headers.get("content-type") || ""
   if (contentType.includes("application/json")) {
@@ -99,12 +180,18 @@ const readApiErrorMessage = async (response: Response, fallbackMessage: string) 
   return `${fallbackMessage} (${response.status})`
 }
 
-export function useVoiceAssistant(): UseVoiceAssistantReturn {
+export function useVoiceAssistant(
+  options: UseVoiceAssistantOptions = {}
+): UseVoiceAssistantReturn {
   const [state, setState] = useState<HalState>("idle")
   const [transcript, setTranscript] = useState("")
   const [response, setResponse] = useState("")
   const [error, setError] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [wakeWordSupported, setWakeWordSupported] = useState(false)
+
+  const wakeWord = options.wakeWord?.trim() || "hey luke"
+  const wakeWordEnabled = options.wakeWordEnabled ?? true
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -113,6 +200,16 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakingTimeoutRef = useRef<number | null>(null)
   const requestControllerRef = useRef<AbortController | null>(null)
+  const wakeRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  useEffect(() => {
+    setWakeWordSupported(Boolean(resolveSpeechRecognitionCtor()))
+  }, [wakeWordEnabled, wakeWord])
 
   const clearSpeakingTimeout = useCallback(() => {
     if (speakingTimeoutRef.current) {
@@ -169,9 +266,29 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
     }
   }, [clearSpeakingTimeout])
 
+  const stopWakeRecognition = useCallback(() => {
+    const recognition = wakeRecognitionRef.current
+    if (!recognition) {
+      return
+    }
+
+    wakeRecognitionRef.current = null
+
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+
+    try {
+      recognition.stop()
+    } catch {
+      // best effort
+    }
+  }, [])
+
   const processAudio = useCallback(
     async (audioBlob: Blob) => {
       stopMediaStream()
+      stopWakeRecognition()
       setState("processing")
       setError("")
       setResponse("")
@@ -284,7 +401,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
         requestControllerRef.current = null
       }
     },
-    [sessionId, stopMediaStream, clearSpeakingTimeout]
+    [sessionId, stopMediaStream, stopWakeRecognition, clearSpeakingTimeout]
   )
 
   const startRecording = useCallback(async () => {
@@ -339,6 +456,83 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
     setError("")
   }, [stopCurrentRequest, stopPlayback])
 
+  const startWakeRecognition = useCallback(() => {
+    const constructor = resolveSpeechRecognitionCtor()
+    if (!constructor || !wakeWordEnabled || !wakeWord.trim()) {
+      return
+    }
+
+    if (stateRef.current !== "idle") {
+      return
+    }
+
+    if (wakeRecognitionRef.current) {
+      return
+    }
+
+    const recognition = new constructor()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = "en-US"
+
+    recognition.onresult = (event: { results: ArrayLike<WakeWordResult> }) => {
+      const detected = extractWakeText(event.results, wakeWord)
+      if (!detected) {
+        return
+      }
+
+      stopWakeRecognition()
+
+      if (stateRef.current !== "idle") {
+        return
+      }
+
+      void startRecording()
+    }
+
+    recognition.onerror = () => {
+      stopWakeRecognition()
+    }
+
+    recognition.onend = () => {
+      wakeRecognitionRef.current = null
+      if (wakeWordEnabled && stateRef.current === "idle") {
+        startWakeRecognition()
+      }
+    }
+
+    wakeRecognitionRef.current = recognition
+
+    try {
+      recognition.start()
+    } catch {
+      stopWakeRecognition()
+    }
+  }, [startRecording, stopWakeRecognition, wakeWord, wakeWordEnabled])
+
+  useEffect(() => {
+    if (!wakeWordEnabled || !wakeWord.trim()) {
+      stopWakeRecognition()
+      setWakeWordSupported(false)
+      return
+    }
+
+    const ctor = resolveSpeechRecognitionCtor()
+    if (!ctor) {
+      stopWakeRecognition()
+      setWakeWordSupported(false)
+      return
+    }
+
+    setWakeWordSupported(true)
+
+    if (state === "idle") {
+      startWakeRecognition()
+    } else {
+      stopWakeRecognition()
+    }
+  }, [state, wakeWordEnabled, wakeWord, startWakeRecognition, stopWakeRecognition])
+
   const toggleRecording = useCallback(() => {
     if (state === "idle") {
       startRecording()
@@ -357,7 +551,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
 
     if (state === "speaking") {
       stopPlayback()
-      setState("idle")
+      startRecording()
       return
     }
 
@@ -366,6 +560,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
 
   useEffect(() => {
     return () => {
+      stopWakeRecognition()
       stopCurrentRequest()
       stopMediaStream()
       stopPlayback()
@@ -373,7 +568,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
         URL.revokeObjectURL(audioRef.current.src)
       }
     }
-  }, [stopCurrentRequest, stopMediaStream, stopPlayback])
+  }, [stopCurrentRequest, stopMediaStream, stopPlayback, stopWakeRecognition])
 
   return {
     state,
@@ -381,5 +576,7 @@ export function useVoiceAssistant(): UseVoiceAssistantReturn {
     response,
     error,
     toggleRecording,
+    wakeWordEnabled,
+    wakeWordSupported,
   }
 }
