@@ -68,6 +68,25 @@ const parseOptionalPositiveInt = (value: unknown) => {
   return parseNumber(value)
 }
 
+const parseOptionalNumber = (value: unknown) => {
+  if (value === undefined || value === "") {
+    return undefined
+  }
+
+  if (typeof value === "number") {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value.trim())
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return value
+}
+
 const websocketUrl = (value: string) => {
   const trimmed = value.trim()
   return trimmed.startsWith("ws://") || trimmed.startsWith("wss://")
@@ -121,6 +140,26 @@ const envSchema = z.object({
     .trim()
     .min(1, "OPENCLAW_WAKE_WORD is required")
     .default("hey luke"),
+  OPENCLAW_WAKE_ENGINE: z.preprocess(
+    parseOptionalString,
+    z.enum(["speech_recognition", "porcupine"]).default("speech_recognition")
+  ),
+  OPENCLAW_WAKE_WORD_ACCESS_KEY: z.preprocess(
+    parseOptionalString,
+    z.string().trim().min(1).optional()
+  ),
+  OPENCLAW_WAKE_WORD_MODEL_PATH: z.preprocess(
+    parseOptionalString,
+    z.string().trim().min(1).optional()
+  ),
+  OPENCLAW_WAKE_WORD_KEYWORD_PATH: z.preprocess(
+    parseOptionalString,
+    z.string().trim().min(1).optional()
+  ),
+  OPENCLAW_WAKE_WORD_SENSITIVITY: z.preprocess(
+    parseOptionalNumber,
+    z.number().min(0).max(1).optional()
+  ),
   OPENCLAW_AGENT_ID: z
     .string()
     .trim()

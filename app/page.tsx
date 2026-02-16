@@ -8,6 +8,11 @@ export default function Home() {
     <HalPanel
       wakeWordEnabled={env.OPENCLAW_WAKE_WORD_ENABLED}
       wakeWord={env.OPENCLAW_WAKE_WORD}
+      wakeEngine={env.OPENCLAW_WAKE_ENGINE}
+      wakeWordAccessKey={env.OPENCLAW_WAKE_WORD_ACCESS_KEY}
+      wakeWordModelPath={env.OPENCLAW_WAKE_WORD_MODEL_PATH}
+      wakeWordKeywordPath={env.OPENCLAW_WAKE_WORD_KEYWORD_PATH}
+      wakeWordSensitivity={env.OPENCLAW_WAKE_WORD_SENSITIVITY}
     />
   )
 }

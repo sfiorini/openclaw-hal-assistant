@@ -7,9 +7,22 @@ import { useVoiceAssistant } from "@/hooks/use-voice-assistant"
 interface HalPanelProps {
   wakeWordEnabled: boolean
   wakeWord: string
+  wakeEngine: "speech_recognition" | "porcupine"
+  wakeWordAccessKey?: string
+  wakeWordModelPath?: string
+  wakeWordKeywordPath?: string
+  wakeWordSensitivity?: number
 }
 
-export function HalPanel({ wakeWordEnabled, wakeWord }: HalPanelProps) {
+export function HalPanel({
+  wakeWordEnabled,
+  wakeWord,
+  wakeEngine,
+  wakeWordAccessKey,
+  wakeWordModelPath,
+  wakeWordKeywordPath,
+  wakeWordSensitivity,
+}: HalPanelProps) {
   const {
     state,
     transcript,
@@ -17,7 +30,15 @@ export function HalPanel({ wakeWordEnabled, wakeWord }: HalPanelProps) {
     error,
     toggleRecording,
     wakeWordSupported,
-  } = useVoiceAssistant({ wakeWordEnabled, wakeWord })
+  } = useVoiceAssistant({
+    wakeWordEnabled,
+    wakeWord,
+    wakeEngine,
+    wakeWordAccessKey,
+    wakeWordModelPath,
+    wakeWordKeywordPath,
+    wakeWordSensitivity,
+  })
 
   return (
     <main className="relative flex h-[100svh] min-h-[100svh] flex-col items-center bg-background px-4 py-5 overflow-hidden">

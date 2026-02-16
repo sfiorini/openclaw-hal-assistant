@@ -1,6 +1,14 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+const { createPorcupineWakeEngineMock } = vi.hoisted(() => ({
+  createPorcupineWakeEngineMock: vi.fn(),
+}))
+
+vi.mock("../../lib/wake/porcupine-wake-engine", () => ({
+  createPorcupineWakeEngine: createPorcupineWakeEngineMock,
+}))
+
 import { useVoiceAssistant } from "../../hooks/use-voice-assistant"
 
 class MockSpeechRecognition {
@@ -65,13 +73,22 @@ class MockMediaRecorder {
 beforeEach(() => {
   vi.restoreAllMocks()
   MockSpeechRecognition.reset()
+  createPorcupineWakeEngineMock.mockReset()
 
   Object.defineProperty(globalThis, "SpeechRecognition", {
     configurable: true,
     value: MockSpeechRecognition,
   })
+  Object.defineProperty(window, "SpeechRecognition", {
+    configurable: true,
+    value: MockSpeechRecognition,
+  })
 
   Object.defineProperty(globalThis, "webkitSpeechRecognition", {
+    configurable: true,
+    value: undefined,
+  })
+  Object.defineProperty(window, "webkitSpeechRecognition", {
     configurable: true,
     value: undefined,
   })
@@ -101,8 +118,15 @@ describe("useVoiceAssistant wake-word behavior", () => {
   it("detects wake phrase and starts recording", async () => {
     const { result } = renderHook(() => useVoiceAssistant({ wakeWord: "hey luke", wakeWordEnabled: true }))
 
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }))
+    })
+
+    await waitFor(() => {
+      expect(MockSpeechRecognition.instances[0]).toBeTruthy()
+    })
+
     const instance = MockSpeechRecognition.instances[0]
-    expect(instance).toBeTruthy()
 
     act(() => {
       instance.onresult?.({
@@ -125,6 +149,10 @@ describe("useVoiceAssistant wake-word behavior", () => {
       configurable: true,
       value: undefined,
     })
+    Object.defineProperty(window, "SpeechRecognition", {
+      configurable: true,
+      value: undefined,
+    })
 
     const { result } = renderHook(() => useVoiceAssistant({ wakeWordEnabled: true }))
 
@@ -136,6 +164,37 @@ describe("useVoiceAssistant wake-word behavior", () => {
 
     await waitFor(() => {
       expect(result.current.state).toBe("recording")
+    })
+  })
+
+  it("starts local porcupine wake engine when configured", async () => {
+    const engine = {
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+      isRunning: vi.fn(() => false),
+    }
+
+    createPorcupineWakeEngineMock.mockResolvedValue(engine)
+
+    renderHook(() =>
+      useVoiceAssistant({
+        wakeWordEnabled: true,
+        wakeWord: "hey luke",
+        wakeEngine: "porcupine",
+        wakeWordAccessKey: "test-access-key",
+        wakeWordModelPath: "/porcupine_params.pv",
+        wakeWordKeywordPath: "/keywords/hey-luke.ppn",
+      })
+    )
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }))
+    })
+
+    await waitFor(() => {
+      expect(createPorcupineWakeEngineMock).toHaveBeenCalledTimes(1)
+      expect(engine.start).toHaveBeenCalledTimes(1)
     })
   })
 })

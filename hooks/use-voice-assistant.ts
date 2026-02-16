@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { HalState } from "@/components/hal-eye"
+import {
+  createPorcupineWakeEngine,
+  type PorcupineWakeEngine,
+} from "@/lib/wake/porcupine-wake-engine"
 
 interface Message {
   role: "user" | "assistant"
@@ -19,6 +23,11 @@ interface UseVoiceAssistantReturn {
 interface UseVoiceAssistantOptions {
   wakeWordEnabled?: boolean
   wakeWord?: string
+  wakeEngine?: "speech_recognition" | "porcupine"
+  wakeWordAccessKey?: string
+  wakeWordModelPath?: string
+  wakeWordKeywordPath?: string
+  wakeWordSensitivity?: number
 }
 
 const SPEAKING_FALLBACK_TIMEOUT_MS = 4_000
@@ -248,9 +257,16 @@ export function useVoiceAssistant(
   const [error, setError] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [wakeWordSupported, setWakeWordSupported] = useState(false)
+  const [hasUserGesture, setHasUserGesture] = useState(false)
 
   const wakeWord = options.wakeWord?.trim() || "hey luke"
   const wakeWordEnabled = options.wakeWordEnabled ?? true
+  const wakeEngine = options.wakeEngine ?? "speech_recognition"
+  const usePorcupineWakeEngine = wakeEngine === "porcupine"
+  const wakeWordAccessKey = options.wakeWordAccessKey?.trim()
+  const wakeWordModelPath = options.wakeWordModelPath?.trim()
+  const wakeWordKeywordPath = options.wakeWordKeywordPath?.trim()
+  const wakeWordSensitivity = options.wakeWordSensitivity
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -266,6 +282,8 @@ export function useVoiceAssistant(
   const requestControllerRef = useRef<AbortController | null>(null)
   const wakeRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const wakeRecognitionActiveRef = useRef(false)
+  const porcupineWakeEngineRef = useRef<PorcupineWakeEngine | null>(null)
+  const porcupineWakeEngineInitRef = useRef<Promise<PorcupineWakeEngine | null> | null>(null)
   const hasUserGestureRef = useRef(false)
   const wakeSuppressedRef = useRef(false)
   const stateRef = useRef(state)
@@ -276,8 +294,18 @@ export function useVoiceAssistant(
   }, [state])
 
   useEffect(() => {
+    if (!wakeWordEnabled) {
+      setWakeWordSupported(false)
+      return
+    }
+
+    if (usePorcupineWakeEngine) {
+      setWakeWordSupported(Boolean(wakeWordAccessKey && wakeWordModelPath))
+      return
+    }
+
     setWakeWordSupported(Boolean(resolveSpeechRecognitionCtor()))
-  }, [wakeWordEnabled, wakeWord])
+  }, [usePorcupineWakeEngine, wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -286,6 +314,7 @@ export function useVoiceAssistant(
 
     const markGesture = () => {
       hasUserGestureRef.current = true
+      setHasUserGesture(true)
       unlockBrowserAudio()
     }
 
@@ -591,6 +620,8 @@ export function useVoiceAssistant(
 
   const startRecording = useCallback(async () => {
     try {
+      wakeSuppressedRef.current = true
+      stateRef.current = "recording"
       setError("")
       setTranscript("")
       setResponse("")
@@ -625,9 +656,130 @@ export function useVoiceAssistant(
     } catch (recordError) {
       console.error("Failed to start recording:", recordError)
       setError("Microphone access denied. Please allow microphone access and try again.")
+      stateRef.current = "idle"
       setState("idle")
     }
   }, [processAudio, startRecordingWatchdog])
+
+  useEffect(() => {
+    if (!usePorcupineWakeEngine) {
+      return
+    }
+
+    if (!wakeWordEnabled || !wakeWord.trim() || !hasUserGesture) {
+      return
+    }
+
+    if (!wakeWordAccessKey || !wakeWordModelPath) {
+      return
+    }
+
+    let cancelled = false
+
+    const ensureEngine = async () => {
+      if (porcupineWakeEngineRef.current) {
+        return porcupineWakeEngineRef.current
+      }
+
+      if (!porcupineWakeEngineInitRef.current) {
+        porcupineWakeEngineInitRef.current = createPorcupineWakeEngine({
+          accessKey: wakeWordAccessKey,
+          wakeWord,
+          modelPath: wakeWordModelPath,
+          keywordPath: wakeWordKeywordPath,
+          sensitivity: wakeWordSensitivity,
+          onWakeWordDetected: () => {
+            if (wakeSuppressedRef.current) {
+              return
+            }
+            if (stateRef.current !== "idle") {
+              return
+            }
+
+            wakeSuppressedRef.current = true
+            stateRef.current = "recording"
+            void startRecording()
+          },
+          onError: (message) => {
+            console.error(message)
+          },
+        })
+          .then((engine) => {
+            if (cancelled) {
+              void engine.release().catch(() => undefined)
+              return null
+            }
+            porcupineWakeEngineRef.current = engine
+            return engine
+          })
+          .catch((creationError) => {
+            console.error("Failed to initialize Porcupine wake engine:", creationError)
+            return null
+          })
+          .finally(() => {
+            porcupineWakeEngineInitRef.current = null
+          })
+      }
+
+      return porcupineWakeEngineInitRef.current
+    }
+
+    const syncEngineState = async () => {
+      const engine = await ensureEngine()
+      if (!engine || cancelled) {
+        return
+      }
+
+      try {
+        if (state === "idle" && !engine.isRunning()) {
+          await engine.start()
+        } else if (state !== "idle" && engine.isRunning()) {
+          await engine.stop()
+        }
+      } catch (engineError) {
+        console.error("Failed to sync Porcupine wake engine state:", engineError)
+      }
+    }
+
+    void syncEngineState()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    hasUserGesture,
+    startRecording,
+    state,
+    usePorcupineWakeEngine,
+    wakeWord,
+    wakeWordAccessKey,
+    wakeWordEnabled,
+    wakeWordKeywordPath,
+    wakeWordModelPath,
+    wakeWordSensitivity,
+  ])
+
+  useEffect(() => {
+    const shouldKeepEngine =
+      usePorcupineWakeEngine && wakeWordEnabled && Boolean(wakeWordAccessKey && wakeWordModelPath)
+
+    if (shouldKeepEngine) {
+      return
+    }
+
+    const releaseEngine = async () => {
+      if (porcupineWakeEngineRef.current) {
+        try {
+          await porcupineWakeEngineRef.current.release()
+        } catch {
+          // best effort
+        }
+        porcupineWakeEngineRef.current = null
+      }
+    }
+
+    void releaseEngine()
+  }, [usePorcupineWakeEngine, wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
 
   const abortAndReset = useCallback(() => {
     stopCurrentRequest()
@@ -638,6 +790,10 @@ export function useVoiceAssistant(
   }, [stopCurrentRequest, stopPlayback])
 
   const startWakeRecognition = useCallback(() => {
+    if (usePorcupineWakeEngine) {
+      return
+    }
+
     const constructor = resolveSpeechRecognitionCtor()
     if (!constructor || !wakeWordEnabled || !wakeWord.trim()) {
       return
@@ -707,12 +863,11 @@ export function useVoiceAssistant(
     } catch {
       wakeRecognitionActiveRef.current = false
     }
-  }, [startRecording, stopWakeRecognition, wakeWord, wakeWordEnabled])
+  }, [startRecording, stopWakeRecognition, usePorcupineWakeEngine, wakeWord, wakeWordEnabled])
 
   useEffect(() => {
-    if (!wakeWordEnabled || !wakeWord.trim()) {
+    if (usePorcupineWakeEngine || !wakeWordEnabled || !wakeWord.trim()) {
       stopWakeRecognition()
-      setWakeWordSupported(false)
       return
     }
 
@@ -725,7 +880,7 @@ export function useVoiceAssistant(
 
     setWakeWordSupported(true)
 
-    if (state === "idle") {
+    if (state === "idle" && hasUserGesture) {
       if (!wakeRecognitionActiveRef.current) {
         startWakeRecognition()
       }
@@ -733,11 +888,20 @@ export function useVoiceAssistant(
     }
 
     stopWakeRecognition()
-  }, [state, wakeWordEnabled, wakeWord, startWakeRecognition, stopWakeRecognition])
+  }, [
+    state,
+    startWakeRecognition,
+    stopWakeRecognition,
+    usePorcupineWakeEngine,
+    wakeWord,
+    wakeWordEnabled,
+    hasUserGesture,
+  ])
 
   const toggleRecording = useCallback(() => {
     if (state === "idle") {
       hasUserGestureRef.current = true
+      setHasUserGesture(true)
       unlockBrowserAudio()
       startRecording()
       return
@@ -755,6 +919,7 @@ export function useVoiceAssistant(
 
     if (state === "speaking") {
       hasUserGestureRef.current = true
+      setHasUserGesture(true)
       unlockBrowserAudio()
       stopPlayback()
       startRecording()
@@ -767,6 +932,10 @@ export function useVoiceAssistant(
   useEffect(() => {
     return () => {
       stopWakeRecognition()
+      if (porcupineWakeEngineRef.current) {
+        void porcupineWakeEngineRef.current.release().catch(() => undefined)
+        porcupineWakeEngineRef.current = null
+      }
       wakeRecognitionRef.current = null
       wakeRecognitionActiveRef.current = false
       stopCurrentRequest()

@@ -25,6 +25,11 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
 - `OPENCLAW_DEFAULT_AGENT_MODEL` (optional): when provided, `/new <model>` bootstrap is auto-prefixed to first message of each new session.
 - `OPENCLAW_WAKE_WORD_ENABLED` (default `true`): enables voice wake-word path.
 - `OPENCLAW_WAKE_WORD` (default `hey luke`): wake phrase used by the frontend.
+- `OPENCLAW_WAKE_ENGINE` (default `speech_recognition`): wake engine mode (`speech_recognition` or `porcupine`).
+- `OPENCLAW_WAKE_WORD_ACCESS_KEY` (required when `OPENCLAW_WAKE_ENGINE=porcupine`): Picovoice AccessKey used by the browser wake engine.
+- `OPENCLAW_WAKE_WORD_MODEL_PATH` (required when `OPENCLAW_WAKE_ENGINE=porcupine`, example `/porcupine_params.pv`): public path to Porcupine `.pv` model.
+- `OPENCLAW_WAKE_WORD_KEYWORD_PATH` (optional): public path to custom Porcupine `.ppn` keyword model (required for non-built-in wake phrases such as `hey luke`).
+- `OPENCLAW_WAKE_WORD_SENSITIVITY` (optional, `0..1`, default `0.6`): Porcupine wake sensitivity.
 - `OPENCLAW_GATEWAY_TIMEOUT_MS` (default `120000`): timeout in ms for Gateway protocol calls.
 - `OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS` (default `3`): max retry attempts for recoverable Gateway socket failures.
 
@@ -40,7 +45,12 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
   - Otherwise, request `sessionId` is used when present.
   - Otherwise, `OPENCLAW_SESSION_ID` is used when configured.
   - Otherwise, a generated UUID session is created.
-- Wake-word mode uses continuous browser speech recognition, which can increase CPU/battery usage. Disable with `OPENCLAW_WAKE_WORD_ENABLED=false` when needed.
+- Wake-word mode supports two engines:
+  - `speech_recognition`: browser Web Speech API fallback (no extra model files).
+  - `porcupine`: local on-device wake engine via Picovoice (recommended for lower trigger latency).
+- `porcupine` mode requires public model assets:
+  - Porcupine model `.pv` file (set with `OPENCLAW_WAKE_WORD_MODEL_PATH`).
+  - For custom wake phrases, a `.ppn` keyword model (set with `OPENCLAW_WAKE_WORD_KEYWORD_PATH`).
 - In some browsers, wake-word listening/audio playback require one initial user interaction. Any first click/tap/key press now unlocks this automatically.
 - Recording now auto-stops after silence (or max duration) for wake/manual flows.
 
