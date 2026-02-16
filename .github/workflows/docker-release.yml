@@ -97,6 +97,11 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
+          build-args: |
+            ELEVENLABS_API_KEY=ci-key
+            ELEVENLABS_VOICE_ID=ci-voice-id
+            OPENCLAW_GATEWAY_URL=ws://localhost:3000
+            OPENCLAW_GATEWAY_TOKEN=ci-token
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.release.outputs.tag }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
