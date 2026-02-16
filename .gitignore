@@ -49,3 +49,6 @@ __v0_jsx-dev-runtime.ts
 
 # Local test files
 /test-results/
+
+# Serena configuration
+.serena/
