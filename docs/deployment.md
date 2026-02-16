@@ -35,8 +35,15 @@ The release workflow:
 
 1. Runs validation (`tests/unit`, `tests/integration`, `tsc`, production build).
 2. Builds and pushes Docker images to Docker Hub as:
-   - `${{ secrets.DOCKERHUB_USERNAME }}/openclaw-hal-assistant:vX.Y.Z`
-   - `${{ secrets.DOCKERHUB_USERNAME }}/openclaw-hal-assistant:latest`
+   - `${DOCKERHUB_USERNAME}/openclaw-hal-assistant:vX.Y.Z`
+   - `${DOCKERHUB_USERNAME}/openclaw-hal-assistant:latest`
+
+3. GitHub workflow controls:
+   - Trigger: `release` event (published)
+   - Manual trigger: `workflow_dispatch` with `release_tag` input
+   - Required secrets:
+     - `DOCKERHUB_USERNAME`
+     - `DOCKERHUB_TOKEN`
 
 Runtime variables are still supplied by compose or `--env-file`, never baked into images.
 
@@ -72,3 +79,20 @@ Run order in compose:
 1. Define all required values in `.env` (or export in your shell).
 2. Start the stack with `pnpm docker:up`.
 3. Validate `docker compose logs -f app` and `/api/health/live`.
+
+### Release operations and rollback
+
+Recommended release flow:
+
+1. Merge your changes to `main`.
+2. Run `pnpm release:<patch|minor|major>` locally.
+3. Push commit and tag (`git push && git push --tags`) or use `--push`.
+4. Create a GitHub release with the exact tag (for example `v1.2.3`).
+5. CI validates and publishes Docker tags:
+   - `${DOCKERHUB_USERNAME}/openclaw-hal-assistant:latest`
+   - `${DOCKERHUB_USERNAME}/openclaw-hal-assistant:v1.2.3`
+
+Rollback option:
+
+- If a release is bad, republish the previous good version by rerunning the release command for that target version and creating a new release/tag.
+- Docker tags are immutable by default in registries; keep the previous tag/published manifests for rollback planning.

@@ -50,6 +50,9 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
+      - name: Run lint
+        run: pnpm lint
+
       - name: Build production bundle
         env:
           ELEVENLABS_API_KEY: ci-key

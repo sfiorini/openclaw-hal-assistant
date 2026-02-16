@@ -65,6 +65,7 @@ curl -X POST http://localhost:3000/api/tts \
 - [API Reference](./docs/api.md)
 - [Deployment](./docs/deployment.md)
 - [Testing](./docs/testing.md)
+- [Release Guide](./docs/release.md)
 - [Review and Gaps](./docs/review-and-gaps.md)
 
 ## OpenAPI and docs UI
@@ -101,5 +102,9 @@ pnpm release:patch -- --push
 A GitHub release (tag `vX.Y.Z`) triggers `.github/workflows/docker-release.yml`,
 which validates tests and builds, then publishes Docker images to Docker Hub as:
 
-- `openclaw-hal-assistant:vX.Y.Z`
-- `openclaw-hal-assistant:latest`
+- `${DOCKERHUB_USERNAME}/openclaw-hal-assistant:vX.Y.Z`
+- `${DOCKERHUB_USERNAME}/openclaw-hal-assistant:latest`
+
+For the complete release playbook (including rollback), see:
+
+- [docs/deployment.md](./docs/deployment.md)
