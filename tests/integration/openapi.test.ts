@@ -63,11 +63,13 @@ describe("OpenAPI and docs", () => {
     const payload = await response.json()
 
     expect(response.status).toBe(200)
-      expect(payload.openapi).toBe("3.0.0")
-      expect(payload.paths["/api/chat"]).toBeDefined()
-      expect(payload.paths["/api/stt"]).toBeDefined()
-      expect(payload.paths["/api/tts"]).toBeDefined()
-      expect(payload.paths["/api/stt"].post.requestBody.content["multipart/form-data"]).toBeDefined()
+    expect(payload.openapi).toBe("3.0.0")
+    expect(payload.paths["/api/chat"]).toBeDefined()
+    expect(payload.paths["/api/chat/jobs"]).toBeUndefined()
+    expect(payload.paths["/api/chat/jobs/{id}"]).toBeUndefined()
+    expect(payload.paths["/api/stt"]).toBeDefined()
+    expect(payload.paths["/api/tts"]).toBeDefined()
+    expect(payload.paths["/api/stt"].post.requestBody.content["multipart/form-data"]).toBeDefined()
   })
 
   it("returns 404 for openapi when docs are disabled", async () => {

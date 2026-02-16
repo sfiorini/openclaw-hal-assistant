@@ -40,6 +40,9 @@
 
 ### Chat
 
+- Legacy async polling (`/api/chat/jobs/*`) is no longer supported.
+- `/api/chat` is now synchronous only.
+
 - `POST /api/chat`
   - JSON request:
     - `message`: string (1-4000 chars)

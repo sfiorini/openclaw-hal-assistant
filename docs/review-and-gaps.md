@@ -2,7 +2,7 @@
 
 ## Reviewed Scope
 
-- Async chat timeout migration items for `2024-02-15` are completed with follow-up verification in-progress.
+- Legacy async `/api/chat/jobs` migration items from earlier milestones are completed.
 - Remaining deferred items:
   - CI/CD pipeline
   - monitoring/metrics endpoint
