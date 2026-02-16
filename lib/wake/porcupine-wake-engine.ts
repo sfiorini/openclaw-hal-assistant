@@ -94,11 +94,11 @@ export async function createPorcupineWakeEngine(
   const modelPath = input.modelPath.trim()
 
   if (!accessKey) {
-    throw new Error("OPENCLAW_WAKE_WORD_ACCESS_KEY is required when OPENCLAW_WAKE_ENGINE=porcupine")
+    throw new Error("OPENCLAW_WAKE_WORD_ACCESS_KEY is required")
   }
 
   if (!modelPath) {
-    throw new Error("OPENCLAW_WAKE_WORD_MODEL_PATH is required when OPENCLAW_WAKE_ENGINE=porcupine")
+    throw new Error("OPENCLAW_WAKE_WORD_MODEL_PATH is required")
   }
 
   const { PorcupineWorker, BuiltInKeyword } = await deps.loadPorcupine()

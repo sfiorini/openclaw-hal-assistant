@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { getServerEnvConfig, validateEnv } from "../../lib/config/env"
 
@@ -38,9 +38,24 @@ describe("getServerEnvConfig", () => {
     expect(config.OPENCLAW_GATEWAY_USERNAME).toBe("default-user")
     expect(config.OPENCLAW_WAKE_WORD_ENABLED).toBe(true)
     expect(config.OPENCLAW_WAKE_WORD).toBe("hey luke")
+    expect(config.OPENCLAW_TEXT_TRANSLATIONS_ENABLED).toBe(true)
     expect(config.OPENCLAW_GATEWAY_TIMEOUT_MS).toBe(120_000)
     expect(config.OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS).toBe(3)
     expect(config.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS).toBe(120_000)
+  })
+
+  it("warns when deprecated OPENCLAW_WAKE_ENGINE is set", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    getServerEnvConfig(
+      createEnv({
+        OPENCLAW_WAKE_ENGINE: "speech_recognition",
+      })
+    )
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Deprecated env OPENCLAW_WAKE_ENGINE detected; wake engine is now Porcupine-only. Remove this variable."
+    )
   })
 
   it("throws when OPENCLAW_GATEWAY_URL is not a valid URL", () => {

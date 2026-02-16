@@ -42,6 +42,36 @@ const createDeps = () => {
 }
 
 describe("createPorcupineWakeEngine", () => {
+  it("throws when access key is missing", async () => {
+    const { deps } = createDeps()
+
+    await expect(
+      createPorcupineWakeEngine(
+        {
+          accessKey: "",
+          wakeWord: "porcupine",
+          modelPath: "/porcupine_params.pv",
+        },
+        deps
+      )
+    ).rejects.toThrow("OPENCLAW_WAKE_WORD_ACCESS_KEY is required")
+  })
+
+  it("throws when model path is missing", async () => {
+    const { deps } = createDeps()
+
+    await expect(
+      createPorcupineWakeEngine(
+        {
+          accessKey: "test-access-key",
+          wakeWord: "porcupine",
+          modelPath: "",
+        },
+        deps
+      )
+    ).rejects.toThrow("OPENCLAW_WAKE_WORD_MODEL_PATH is required")
+  })
+
   it("creates and subscribes using a built-in keyword mapping", async () => {
     const { deps, createWorker, subscribe, unsubscribe } = createDeps()
     const engine = await createPorcupineWakeEngine(

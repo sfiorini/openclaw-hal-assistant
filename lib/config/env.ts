@@ -140,9 +140,9 @@ const envSchema = z.object({
     .trim()
     .min(1, "OPENCLAW_WAKE_WORD is required")
     .default("hey luke"),
-  OPENCLAW_WAKE_ENGINE: z.preprocess(
-    parseOptionalString,
-    z.enum(["speech_recognition", "porcupine"]).default("speech_recognition")
+  OPENCLAW_TEXT_TRANSLATIONS_ENABLED: z.preprocess(
+    parseBoolean,
+    z.boolean().default(true)
   ),
   OPENCLAW_WAKE_WORD_ACCESS_KEY: z.preprocess(
     parseOptionalString,
@@ -216,9 +216,18 @@ const envSchema = z.object({
   ),
 })
 
+const warnIfDeprecatedWakeEnginePresent = (env: NodeJS.ProcessEnv) => {
+  if (typeof env.OPENCLAW_WAKE_ENGINE === "string" && env.OPENCLAW_WAKE_ENGINE.trim().length > 0) {
+    console.warn(
+      "Deprecated env OPENCLAW_WAKE_ENGINE detected; wake engine is now Porcupine-only. Remove this variable."
+    )
+  }
+}
+
 export type EnvConfig = z.infer<typeof envSchema>
 
 export function getServerEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
+  warnIfDeprecatedWakeEnginePresent(env)
   const result = envSchema.safeParse(env)
   if (!result.success) {
     const errors = result.error.issues
@@ -236,6 +245,7 @@ export function getServerEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvCon
 }
 
 export function validateEnv(env: NodeJS.ProcessEnv = process.env) {
+  warnIfDeprecatedWakeEnginePresent(env)
   const result = envSchema.safeParse(env)
 
   if (!result.success) {

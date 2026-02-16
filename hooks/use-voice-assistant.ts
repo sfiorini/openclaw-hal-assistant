@@ -205,6 +205,7 @@ export function useVoiceAssistant(
   const requestControllerRef = useRef<AbortController | null>(null)
   const porcupineWakeEngineRef = useRef<PorcupineWakeEngine | null>(null)
   const porcupineWakeEngineInitRef = useRef<Promise<PorcupineWakeEngine | null> | null>(null)
+  const wakeConfigWarningRef = useRef<string | null>(null)
   const hasUserGestureRef = useRef(false)
   const wakeSuppressedRef = useRef(false)
   const stateRef = useRef(state)
@@ -221,6 +222,28 @@ export function useVoiceAssistant(
     }
 
     setWakeWordSupported(Boolean(wakeWordAccessKey && wakeWordModelPath))
+  }, [wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
+
+  useEffect(() => {
+    if (!wakeWordEnabled) {
+      wakeConfigWarningRef.current = null
+      return
+    }
+
+    if (wakeWordAccessKey && wakeWordModelPath) {
+      wakeConfigWarningRef.current = null
+      return
+    }
+
+    const warningKey = `${wakeWordAccessKey ?? ""}|${wakeWordModelPath ?? ""}`
+    if (wakeConfigWarningRef.current === warningKey) {
+      return
+    }
+
+    console.warn(
+      "Wake word disabled: Porcupine access key or model path not configured. Manual recording mode active."
+    )
+    wakeConfigWarningRef.current = warningKey
   }, [wakeWordAccessKey, wakeWordEnabled, wakeWordModelPath])
 
   useEffect(() => {

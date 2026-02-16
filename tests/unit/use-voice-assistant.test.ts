@@ -75,9 +75,13 @@ beforeEach(() => {
 
 describe("useVoiceAssistant wake-word behavior", () => {
   it("supports manual mode when porcupine wake is not configured", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined)
     const { result } = renderHook(() => useVoiceAssistant({ wakeWordEnabled: true }))
 
     expect(result.current.wakeWordSupported).toBe(false)
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Wake word disabled: Porcupine access key or model path not configured. Manual recording mode active."
+    )
 
     act(() => {
       result.current.toggleRecording()
