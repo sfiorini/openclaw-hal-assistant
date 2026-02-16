@@ -47,32 +47,14 @@
     - `newSession` (optional, default `false`) starts a new session
     - `conversationHistory` (optional, max 20 messages) used when `sessionId` is not valid/unknown
       - ignored when the session can be resolved server-side
-  - Success: `202` with async job descriptor
-    - `jobId`: UUID
-    - `sessionId`: UUID returned by server for this turn
-    - `status`: `"queued"`
-    - `pollAfterMs`: minimum delay before first poll (ms)
-    - `maxPollAttempts`: max polling attempts
-    - `maxWaitMs`: max wall-clock wait for a response
+  - Success: `200` with synchronous response
+    - `text`: assistant text
+    - `sessionId`: UUID associated with this conversation context
+    - `conversationHistory`: resolved conversation history after this turn
   - Commands:
     - `"/new <message>"` starts a new session and strips the command
     - `"/reset"` starts a new empty session (with any remainder text removed)
     - `/NEW` and `/RESET` are treated as normal text (case-sensitive)
-
-- `GET /api/chat/jobs/{jobId}`
-  - Polling endpoint for async completion.
-  - States:
-    - `queued` / `running` while in progress
-    - all responses include `sessionId`
-    - `completed` includes `response.text` and `response.conversationHistory`
-    - `failed` / `cancelled` include `error.code` + `error.message`
-  - Always returns `pollAfterMs` guidance.
-
-- `DELETE /api/chat/jobs/{jobId}`
-  - Cancels queued/running jobs.
-  - Returns `200` when cancelled (and for already-cancelled jobs),
-    `409` when completed/failed, `404` when unknown.
-  - Errors: `400`, `502`, `429`, `500`
 
 ### OpenAPI/docs
 

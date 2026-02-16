@@ -33,41 +33,20 @@ export const installBrowserApiMocks = async (
         injectedAudioHex.match(/../g)?.map((byte) => Number.parseInt(byte, 16)) ?? [73, 68, 51, 3, 0, 0, 0]
       )
 
-      const mockModelsResponse = { data: [{ id: "main" }] }
-      const mockSttResponse = { text: injectedSttText }
-      const mockSessionId = "e2e-mock-session-id"
-      const mockChatSubmissionResponse = {
-        jobId: "e2e-mock-chat-job",
-        sessionId: mockSessionId,
-        status: "queued" as const,
-        pollAfterMs: 500,
-        maxPollAttempts: 20,
-        maxWaitMs: 10000,
-      }
-      const mockChatTerminalResponse = {
-        jobId: "e2e-mock-chat-job",
-        status: "completed" as const,
-        sessionId: mockSessionId,
-        pollAfterMs: 0,
-        attemptCount: 2,
-        createdAt: new Date().toISOString(),
-        startedAt: new Date().toISOString(),
-        finishedAt: new Date().toISOString(),
-        response: {
-          text: injectedChatText,
-          conversationHistory: [
-            { role: "user", content: "what is the weather" },
-            { role: "assistant", content: injectedChatText },
-          ],
-        },
-      }
+  const mockModelsResponse = { data: [{ id: "main" }] }
+  const mockSttResponse = { text: injectedSttText }
+  const mockSessionId = "e2e-mock-session-id"
+  const mockChatResponse = {
+    sessionId: mockSessionId,
+    text: injectedChatText,
+    conversationHistory: [
+      { role: "user", content: "what is the weather" },
+      { role: "assistant", content: injectedChatText },
+    ],
+  }
 
-      const mockChatJobPollState = {
-        attempts: 0,
-      }
-
-      const originalFetch = window.fetch.bind(window)
-      window.fetch = async (input, init = {}) => {
+  const originalFetch = window.fetch.bind(window)
+  window.fetch = async (input, init = {}) => {
         const requestInfo =
           input instanceof Request ? input.url : typeof input === "string" ? input : String(input)
         const url = new URL(requestInfo, window.location.href)
@@ -102,29 +81,7 @@ export const installBrowserApiMocks = async (
         }
 
         if (url.pathname === "/api/chat" || url.pathname === "/api/chat/") {
-          mockChatJobPollState.attempts = 0
-          return Response.json(mockChatSubmissionResponse, {
-            status: 202,
-            headers: { "Content-Type": "application/json" },
-          })
-        }
-
-        if (url.pathname.startsWith("/api/chat/jobs/")) {
-          mockChatJobPollState.attempts += 1
-          let pollPayload: Record<string, unknown>
-
-          if (mockChatJobPollState.attempts < 2) {
-            pollPayload = {
-              ...mockChatTerminalResponse,
-              status: "running",
-              startedAt: new Date().toISOString(),
-              pollAfterMs: 250,
-            }
-          } else {
-            pollPayload = mockChatTerminalResponse
-          }
-
-          return Response.json(pollPayload, {
+          return Response.json(mockChatResponse, {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })

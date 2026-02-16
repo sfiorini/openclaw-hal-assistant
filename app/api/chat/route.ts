@@ -6,31 +6,23 @@ import { createLogger } from "../../../lib/middleware/logger"
 import { limitRequest } from "../../../lib/middleware/rate-limit"
 import { withApiKeyAuth } from "../../../lib/middleware/auth"
 import {
-  chatJobSubmissionResponseSchema,
   chatRequestSchema,
+  chatResponseSchema,
 } from "../../../lib/schemas/chat.schema"
-import { parseChatSessionCommand } from "../../../lib/chat/schemas/session.schema"
+import {
+  chatSessionIdSchema,
+  parseChatSessionCommand,
+} from "../../../lib/chat/schemas/session.schema"
 import {
   getOrCreateSession,
   getSessionForJobLimitCheck,
   appendToSessionConversation,
   releaseSessionJobSlot,
-  setSessionLastJobId,
   setSessionModelInitialized,
 } from "../../../lib/chat/sessions"
 import { getServerEnvConfig } from "../../../lib/config/env"
-import {
-  createChatJob,
-  getChatJobById,
-  getChatJobByIdempotencyKey,
-  getPollAfterMs,
-  markChatJobFinalized,
-  markChatJobProgress,
-  markChatJobRunning,
-  type ChatJobStatus,
-  POLL_CONFIG,
-} from "../../../lib/chat/jobs"
-import { chatWithOpenClaw, mapOpenClawError } from "../../../lib/openclaw/chat"
+import { chatWithGateway } from "../../../lib/openclaw/gateway-client"
+import { GatewayClientError } from "../../../lib/openclaw/gateway.types"
 
 const logger = createLogger()
 const CHAT_OPERATION = "chat.submit"
@@ -44,29 +36,6 @@ const buildJsonResponse = (request: NextRequest, status: number, body: Record<st
     }),
     request
   )
-
-const readIdempotencyKey = (request: NextRequest) => {
-  const key = request.headers.get("Idempotency-Key") ?? request.headers.get("idempotency-key")
-  if (!key) {
-    return undefined
-  }
-  return key.trim() || undefined
-}
-
-const buildSubmissionResponse = (job: {
-  id: string
-  sessionId: string
-  status: ChatJobStatus
-  attemptCount?: number
-}) =>
-  chatJobSubmissionResponseSchema.parse({
-    jobId: job.id,
-    sessionId: job.sessionId,
-    status: "queued",
-    pollAfterMs: getPollAfterMs(job.status, job.attemptCount ?? 0),
-    maxPollAttempts: POLL_CONFIG.maxPollAttempts,
-    maxWaitMs: POLL_CONFIG.maxWaitMs,
-  })
 
 const resolveSessionContext = async (payload: {
   message: string
@@ -83,6 +52,7 @@ const resolveSessionContext = async (payload: {
   const requestedSessionId = payload.sessionId ?? payload.defaultSessionId
   const shouldForceDefaultSession =
     !shouldCreateNewSession && !!payload.defaultSessionId && !payload.sessionId
+
   const session = await getOrCreateSession(
     shouldCreateNewSession ? undefined : requestedSessionId,
     shouldCreateNewSession,
@@ -94,6 +64,7 @@ const resolveSessionContext = async (payload: {
       forceRequestedSessionId: shouldForceDefaultSession,
     }
   )
+
   let message = parsed.message
   if (!shouldCreateNewSession && !session.modelInitialized && payload.defaultAgentModel?.trim()) {
     const normalizedModel = payload.defaultAgentModel.trim()
@@ -108,98 +79,29 @@ const resolveSessionContext = async (payload: {
   }
 }
 
-const executeChatJob = async (
-  jobId: string,
-  payload: {
-    message: string
-    conversationHistory: Array<{ role: "user" | "assistant"; content: string }>
-    sessionId: string
-  },
-  config: { gatewayUrl: string; token: string; agentId: string; requestTimeoutMs: number }
-) => {
-  const startedAt = Date.now()
-  logger.info(`[${CHAT_OPERATION}] job started: ${jobId}`)
+const resolveResponseSessionId = (candidate: string, fallback: string) => {
+  const parsed = chatSessionIdSchema.safeParse(candidate)
+  return parsed.success ? parsed.data : fallback
+}
 
-  markChatJobProgress(jobId, "dispatching_to_openclaw")
-  const runningJob = markChatJobRunning(jobId)
-  if (!runningJob) {
-    return
+const resolveGatewayError = (error: unknown) => {
+  if (error instanceof GatewayClientError) {
+    return {
+      status: error.code === "timeout" ? 504 : 502,
+      payload: {
+        error: error.message,
+        code: error.code,
+        ...(error.details ? { details: error.details } : {}),
+      },
+    }
   }
 
-  try {
-    markChatJobProgress(jobId, "waiting_for_upstream")
-    const result = await chatWithOpenClaw(
-      {
-        message: payload.message,
-        conversationHistory: payload.conversationHistory,
-        gatewayUrl: config.gatewayUrl,
-        gatewayToken: config.token,
-        agentId: config.agentId,
-        sessionId: payload.sessionId,
-      },
-      config.requestTimeoutMs
-    )
-
-    const latestState = getChatJobById(jobId)
-    if (!latestState || latestState.status !== "running") {
-      logger.info(`[${CHAT_OPERATION}] job no longer running before completion: ${jobId}`)
-      return
-    }
-
-    try {
-      await appendToSessionConversation(payload.sessionId, [
-        {
-          role: "user",
-          content: payload.message,
-        },
-        {
-          role: "assistant",
-          content: result.text,
-        },
-      ])
-    } catch (error) {
-      logger.warn(
-        `[${CHAT_OPERATION}] unable to persist chat turn for session ${payload.sessionId}: ${getErrorMessage(
-          error
-        )}`
-      )
-    }
-
-    const durationMs = Date.now() - startedAt
-    markChatJobProgress(jobId, "finalizing")
-    markChatJobFinalized(
-      jobId,
-      "completed",
-      {
-        response: {
-          text: result.text,
-          conversationHistory: result.conversationHistory,
-        },
-      },
-      "request"
-    )
-    logger.info(`[${CHAT_OPERATION}] job completed in ${durationMs}ms: ${jobId}`)
-  } catch (error) {
-    const current = getChatJobById(jobId)
-    if (current?.status === "cancelled" || current?.status === "completed") {
-      logger.info(`[${CHAT_OPERATION}] job cancelled before completion: ${jobId}`)
-      return
-    }
-
-    const mapped = mapOpenClawError(error)
-    markChatJobFinalized(
-      jobId,
-      "failed",
-      {
-        error: {
-          code: mapped.code,
-          message: mapped.message,
-          details: mapped.details,
-        },
-      },
-      "request"
-    )
-    logger.error(`[${CHAT_OPERATION}] job failed (${jobId}): ${mapped.message}`)
+  return {
+    status: 500,
+    payload: {
+      error: error instanceof Error ? error.message : "Unexpected error",
+      code: "server_error",
+    },
   }
 }
 
@@ -228,14 +130,6 @@ export async function POST(request: NextRequest) {
     return applyCorsHeaders(rateLimitResponse, request)
   }
 
-  const idempotencyKey = readIdempotencyKey(request)
-  if (idempotencyKey) {
-    const existing = getChatJobByIdempotencyKey(idempotencyKey)
-    if (existing) {
-      return buildJsonResponse(request, 202, buildSubmissionResponse(existing))
-    }
-  }
-
   let payload
   try {
     payload = chatRequestSchema.parse(await request.json())
@@ -254,8 +148,11 @@ export async function POST(request: NextRequest) {
     return buildJsonResponse(request, 400, { error: "Invalid request" })
   }
 
+  let sessionContext
+  let sessionLocked = false
+
   try {
-    const sessionContext = await resolveSessionContext({
+    sessionContext = await resolveSessionContext({
       message: payload.message,
       sessionId: payload.sessionId,
       newSession: payload.newSession,
@@ -265,53 +162,71 @@ export async function POST(request: NextRequest) {
       defaultSessionId: env.OPENCLAW_SESSION_ID,
       defaultAgentModel: env.OPENCLAW_DEFAULT_AGENT_MODEL,
     })
-    await getSessionForJobLimitCheck(sessionContext.sessionId)
-    let job
-    try {
-      job = createChatJob({
-        message: sessionContext.message,
-        conversationHistory: sessionContext.conversationHistory,
-        sessionId: sessionContext.sessionId,
-        idempotencyKey,
-      })
-      await setSessionLastJobId(sessionContext.sessionId, job.id)
-    } catch (error) {
-      await releaseSessionJobSlot(sessionContext.sessionId)
-      throw error
-    }
 
-    void executeChatJob(
-      job.id,
+    await getSessionForJobLimitCheck(sessionContext.sessionId)
+    sessionLocked = true
+
+    const result = await chatWithGateway({
+      gatewayUrl: env.OPENCLAW_GATEWAY_URL,
+      gatewayToken: env.OPENCLAW_GATEWAY_TOKEN,
+      conversationId: sessionContext.sessionId,
+      text: sessionContext.message,
+      timeoutMs: env.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS,
+      maxRetryAttempts: env.OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS,
+    })
+    const responseSessionId = resolveResponseSessionId(result.conversationId, sessionContext.sessionId)
+
+    const nextConversationHistory = [
+      ...sessionContext.conversationHistory,
       {
-        message: job.request.message,
-        conversationHistory: job.request.conversationHistory,
-        sessionId: job.sessionId,
+        role: "user",
+        content: sessionContext.message,
       },
       {
-        gatewayUrl: env.OPENCLAW_GATEWAY_URL,
-        token: env.OPENCLAW_GATEWAY_TOKEN,
-        agentId: env.OPENCLAW_AGENT_ID,
-        requestTimeoutMs:
-          env.OPENCLAW_CHAT_REQUEST_TIMEOUT_MS ?? env.OPENCLAW_GATEWAY_TIMEOUT_MS ?? 120_000,
-      }
-    )
+        role: "assistant",
+        content: result.text,
+      },
+    ]
 
-    const responsePayload = buildSubmissionResponse(job)
-    logger.info(`[${CHAT_OPERATION}] accepted job: ${job.id}`)
+    try {
+      await appendToSessionConversation(sessionContext.sessionId, [
+        {
+          role: "user",
+          content: sessionContext.message,
+        },
+        {
+          role: "assistant",
+          content: result.text,
+        },
+      ])
+    } catch (error) {
+      logger.warn(
+        `[${CHAT_OPERATION}] unable to persist chat turn for session ${sessionContext.sessionId}: ${getErrorMessage(
+          error
+        )}`
+      )
+    }
 
-    return buildJsonResponse(request, 202, responsePayload)
+    const responsePayload = chatResponseSchema.parse({
+      text: result.text,
+      conversationHistory: nextConversationHistory,
+      sessionId: responseSessionId,
+    })
+
+    logger.info(`[${CHAT_OPERATION}] completed chat for session: ${responsePayload.sessionId}`)
+    return buildJsonResponse(request, 200, responsePayload)
   } catch (error) {
     if (error && typeof error === "object" && (error as { code?: string }).code) {
       const code = (error as { code?: string }).code
       const message = (error as { message?: string }).message
 
-      if (code === "session_limit_exceeded" || code === "concurrency_error") {
+      if (code === "concurrency_error") {
         return buildJsonResponse(request, 503, {
           error: "Concurrency limit reached",
           code,
           message: message || "Maximum concurrent work in progress",
           retryable: true,
-          retryAfterMs: POLL_CONFIG.initialPollAfterMs,
+          retryAfterMs: 1000,
         })
       }
 
@@ -324,9 +239,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const mapped = resolveGatewayError(error)
     logger.error(`Chat route error: ${getErrorMessage(error)}`)
-    return buildJsonResponse(request, 500, {
-      error: "Internal server error",
-    })
+    return buildJsonResponse(request, mapped.status, mapped.payload)
+  } finally {
+    if (sessionLocked && sessionContext?.sessionId) {
+      await releaseSessionJobSlot(sessionContext.sessionId)
+    }
   }
 }

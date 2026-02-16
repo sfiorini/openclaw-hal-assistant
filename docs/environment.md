@@ -28,11 +28,13 @@ All runtime configuration is loaded from environment variables or `.env` via Nex
 - `OPENCLAW_GATEWAY_TIMEOUT_MS` (default `120000`): timeout in ms for Gateway protocol calls.
 - `OPENCLAW_GATEWAY_MAX_RETRY_ATTEMPTS` (default `3`): max retry attempts for recoverable Gateway socket failures.
 
-## Async chat behavior
+## Chat behavior
 
-- `POST /api/chat` returns `202` and a `jobId`.
-- Clients should poll `GET /api/chat/jobs/{jobId}` until terminal state.
-- `sessionId` returned by `/api/chat` is accepted by the frontend and reused across page reloads (stored in localStorage).
+- `POST /api/chat` returns a direct `200` completion payload:
+  - `text`
+  - `sessionId`
+  - `conversationHistory`
+- `sessionId` is returned by `/api/chat` and reused by the frontend across page reloads (stored in localStorage).
 
 ## Using `.env`
 

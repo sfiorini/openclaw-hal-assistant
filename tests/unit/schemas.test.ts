@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest"
 import {
   chatMessageSchema,
   chatRequestSchema,
-  chatJobSubmissionResponseSchema,
-  chatJobCompletedSchema,
-  chatJobStatusSchema,
   chatResponseSchema,
 } from "../../lib/schemas/chat.schema"
 import { parseChatSessionCommand } from "../../lib/chat/schemas/session.schema"
@@ -88,6 +85,7 @@ describe("schema validations", () => {
 
     const response = chatResponseSchema.parse({
       text: "Hi there",
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
       conversationHistory: [
         { role: "assistant", content: "Hi there" },
       ],
@@ -101,65 +99,83 @@ describe("schema validations", () => {
     expect(() => sttRequestSchema.parse({ audio: null })).toThrow()
   })
 
-  it("validates chat job submission response", () => {
+  it("validates chat response schema", () => {
     const payload = {
+      text: "ok",
       sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      status: "queued",
-      pollAfterMs: 500,
-      maxPollAttempts: 240,
-      maxWaitMs: 240000,
+      conversationHistory: [
+        { role: "assistant", content: "hi" },
+        { role: "user", content: "you there" },
+      ],
     }
 
-    expect(chatJobSubmissionResponseSchema.parse(payload)).toEqual(payload)
+    expect(chatResponseSchema.parse(payload)).toEqual(payload)
+
+    const parsedFromTextOnly = chatResponseSchema.parse({
+      text: "greet",
+      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+      conversationHistory: [{ role: "assistant", content: "greet" }],
+    })
+    expect(parsedFromTextOnly.text).toBe("greet")
   })
 
-  it("validates chat job terminal status schema", () => {
-    const payload = {
-      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      status: "completed",
-      pollAfterMs: 0,
-      attemptCount: 1,
-      createdAt: new Date().toISOString(),
-      startedAt: new Date().toISOString(),
-      finishedAt: new Date().toISOString(),
-      response: {
+  it("rejects invalid chat response payloads", () => {
+    expect(() =>
+      chatResponseSchema.parse({
         text: "ok",
-        conversationHistory: [{ role: "assistant", content: "hi" }],
-      },
-    }
+        sessionId: "not-a-uuid",
+        conversationHistory: [],
+      })
+    ).toThrow()
 
-    expect(chatJobCompletedSchema.parse(payload).jobId).toBe(payload.jobId)
-    expect(chatJobCompletedSchema.parse(payload).status).toBe("completed")
+    expect(() =>
+      chatResponseSchema.parse({
+        text: "",
+        sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+        conversationHistory: [],
+      })
+    ).toThrow()
+
+    expect(() =>
+      chatResponseSchema.parse({
+        text: "ok",
+        sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
+        conversationHistory: [{ role: "system", content: "nope" }],
+      })
+    ).toThrow()
   })
 
-  it("validates chat job status union schema", () => {
-    const queued = chatJobStatusSchema.parse({
+  it("parses chat request payload", () => {
+    const payload = {
       sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      status: "queued",
-      pollAfterMs: 500,
-      attemptCount: 0,
-      createdAt: new Date().toISOString(),
+      message: "ask",
+      conversationHistory: [{ role: "assistant", content: "hi" }],
+      newSession: true,
+    }
+
+    expect(chatRequestSchema.parse(payload)).toEqual({
+      ...payload,
+      conversationHistory: payload.conversationHistory,
     })
 
-    expect(["queued", "running", "completed", "failed", "cancelled"]).toContain(queued.status)
+    expect(
+      chatRequestSchema.parse({
+        message: "hello",
+      }).newSession
+    ).toBe(false)
+  })
 
-    const failed = chatJobStatusSchema.parse({
-      sessionId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      jobId: "f81c1f8a-9f7c-4e95-9e8c-cfd1f9b3c8f2",
-      status: "failed",
-      pollAfterMs: 0,
-      attemptCount: 2,
-      createdAt: new Date().toISOString(),
-      error: {
-        code: "upstream_error",
-        message: "OpenClaw request failed",
-      },
-    })
+  it("rejects invalid chat request payloads", () => {
+    expect(() =>
+      chatRequestSchema.parse({ message: "" })
+    ).toThrow()
 
-    expect(failed.status).toBe("failed")
+    expect(() =>
+      chatRequestSchema.parse({
+        message: "x",
+        conversationHistory: [{ role: "admin", content: "no" }],
+      })
+    ).toThrow()
   })
 
   it("parses session reset command syntax", () => {
