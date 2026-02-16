@@ -10,7 +10,7 @@
     "build": "next build",
     "postbuild": "pnpm gen:openapi",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "pnpm dlx eslint@8.57.0 . --ext .js,.mjs,.cjs",
     "docker:build": "docker build -t openclaw-hal-assistant:latest .",
     "docker:run": "docker run -p 3000:3000 --env-file .env openclaw-hal-assistant:latest",
     "docker:up": "docker compose up -d",
