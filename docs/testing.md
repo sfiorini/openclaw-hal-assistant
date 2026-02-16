@@ -27,3 +27,12 @@ Prerequisite:
 pnpm test:all
 pnpm build
 ```
+
+## Coverage expectations for current wake/UI behavior
+
+- Wake-word flow is validated through Porcupine-focused unit tests.
+- Manual recording fallback is validated when wake config is missing.
+- Translation panel behavior is validated for:
+  - env-enabled default visible state
+  - show/hide toggle persistence
+  - env-disabled forced hidden behavior.

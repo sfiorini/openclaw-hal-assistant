@@ -4,6 +4,11 @@
 
 `http://localhost:3000`
 
+## UI behavior note
+
+- Transcript/response display is a frontend behavior controlled by `OPENCLAW_TEXT_TRANSLATIONS_ENABLED`.
+- This flag does not change API request/response contracts.
+
 ## Cross-Origin and auth behavior
 
 - CORS headers are applied for API routes.

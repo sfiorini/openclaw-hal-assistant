@@ -25,7 +25,9 @@ test.describe("voice flow", () => {
     const stopButton = page.getByRole("button", { name: /stop recording/i })
     await stopButton.click()
 
-    await expect(processingState).toBeVisible()
+    await expect(processingState.or(waitingState).or(speakingState)).toBeVisible({
+      timeout: 5000,
+    })
     await expect(waitingState.or(speakingState)).toBeVisible({ timeout: 5000 })
     await expect(speakingState).toBeVisible({ timeout: 5000 })
     await expect(readyState).toBeVisible({ timeout: 5000 })

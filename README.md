@@ -32,13 +32,22 @@ cp .env.example .env
 - `OPENCLAW_GATEWAY_URL`
 - `OPENCLAW_GATEWAY_TOKEN`
 
-4. Start the app
+4. Optional: enable wake-word activation with Porcupine
+
+- Create a Picovoice account and get an `AccessKey`: https://console.picovoice.ai/
+- Configure:
+  - `OPENCLAW_WAKE_WORD_ACCESS_KEY`
+  - `OPENCLAW_WAKE_WORD_MODEL_PATH` (for example `/porcupine_params.pv`)
+  - `OPENCLAW_WAKE_WORD_KEYWORD_PATH` for custom wake phrases (required when not using a built-in keyword)
+- If wake config is missing/invalid, the app falls back to manual mode (eye button).
+
+5. Start the app
 
 ```bash
 pnpm dev
 ```
 
-5. Call endpoints (examples)
+6. Call endpoints (examples)
 
 Submit chat and receive an immediate response:
 
@@ -63,6 +72,11 @@ curl -X POST http://localhost:3000/api/tts \
 - [Testing](./docs/testing.md)
 - [Release Guide](./docs/release.md)
 - [Review and Gaps](./docs/review-and-gaps.md)
+
+## UI behavior flags
+
+- `OPENCLAW_TEXT_TRANSLATIONS_ENABLED=true` shows transcript/response panels and a UI button to show/hide them.
+- `OPENCLAW_TEXT_TRANSLATIONS_ENABLED=false` hides transcript/response panels entirely.
 
 ## OpenAPI and docs UI
 
