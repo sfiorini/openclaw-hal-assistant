@@ -50,8 +50,7 @@ const resolveSessionContext = async (payload: {
   const parsed = parseChatSessionCommand(payload.message)
   const shouldCreateNewSession = payload.newSession || parsed.newSession
   const requestedSessionId = payload.sessionId ?? payload.defaultSessionId
-  const shouldForceDefaultSession =
-    !shouldCreateNewSession && !!payload.defaultSessionId && !payload.sessionId
+  const shouldForceRequestedSession = !shouldCreateNewSession && !!requestedSessionId
 
   const session = await getOrCreateSession(
     shouldCreateNewSession ? undefined : requestedSessionId,
@@ -60,8 +59,8 @@ const resolveSessionContext = async (payload: {
     {
       appName: payload.appName,
       gatewayUsername: payload.gatewayUsername,
-      requestedSessionId: shouldForceDefaultSession ? requestedSessionId : undefined,
-      forceRequestedSessionId: shouldForceDefaultSession,
+      requestedSessionId: shouldForceRequestedSession ? requestedSessionId : undefined,
+      forceRequestedSessionId: shouldForceRequestedSession,
     }
   )
 

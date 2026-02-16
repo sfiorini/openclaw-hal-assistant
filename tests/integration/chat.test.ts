@@ -160,6 +160,35 @@ describe("Chat direct response", () => {
     expect(secondPayload.sessionId).toBe(firstPayload.sessionId)
   })
 
+  it("preserves provided sessionId when in-memory sessions are unavailable", async () => {
+    vi.mocked(chatWithGateway).mockResolvedValue({
+      text: "first response",
+      conversationId: "d6ab2f4e-a0d4-4d0d-bb1d-6a7cd7f2f111",
+    })
+
+    const first = await POST(createChatRequest({ message: "First message" }))
+    const firstPayload = await first.json()
+    expect(first.status).toBe(200)
+
+    __resetChatSessionsForTests()
+
+    vi.mocked(chatWithGateway).mockResolvedValue({
+      text: "second response",
+      conversationId: firstPayload.sessionId,
+    })
+
+    const second = await POST(
+      createChatRequest({
+        message: "Second message",
+        sessionId: firstPayload.sessionId,
+      })
+    )
+    const secondPayload = await second.json()
+
+    expect(second.status).toBe(200)
+    expect(secondPayload.sessionId).toBe(firstPayload.sessionId)
+  })
+
   it("persists and appends session conversation turns", async () => {
     const captured: Array<{ conversationId?: string; text?: string; gatewayPayload?: Record<string, unknown> }> = []
 
