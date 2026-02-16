@@ -11,6 +11,8 @@ vi.mock("../../lib/wake/porcupine-wake-engine", () => ({
 
 import { useVoiceAssistant } from "../../hooks/use-voice-assistant"
 
+const TRANSLATION_VISIBILITY_STORAGE_KEY = "openclaw_show_translations"
+
 class MockAudio {
   onended: ((event: Event) => void) | null = null
   onerror: ((event: Event) => void) | null = null
@@ -51,6 +53,7 @@ class MockMediaRecorder {
 beforeEach(() => {
   vi.restoreAllMocks()
   createPorcupineWakeEngineMock.mockReset()
+  window.localStorage.clear()
 
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -120,5 +123,45 @@ describe("useVoiceAssistant wake-word behavior", () => {
       expect(createPorcupineWakeEngineMock).toHaveBeenCalledTimes(1)
       expect(engine.start).toHaveBeenCalledTimes(1)
     })
+  })
+})
+
+describe("useVoiceAssistant translation visibility", () => {
+  it("defaults translations to visible when enabled", () => {
+    const { result } = renderHook(() =>
+      useVoiceAssistant({ wakeWordEnabled: false, textTranslationsEnabled: true })
+    )
+
+    expect(result.current.textTranslationsEnabled).toBe(true)
+    expect(result.current.showTranslations).toBe(true)
+  })
+
+  it("toggles translation visibility and persists to localStorage", () => {
+    const { result } = renderHook(() =>
+      useVoiceAssistant({ wakeWordEnabled: false, textTranslationsEnabled: true })
+    )
+
+    act(() => {
+      result.current.toggleTranslationsVisibility()
+    })
+
+    expect(result.current.showTranslations).toBe(false)
+    expect(window.localStorage.getItem(TRANSLATION_VISIBILITY_STORAGE_KEY)).toBe("0")
+  })
+
+  it("forces translations hidden when env disables them", () => {
+    window.localStorage.setItem(TRANSLATION_VISIBILITY_STORAGE_KEY, "1")
+    const { result } = renderHook(() =>
+      useVoiceAssistant({ wakeWordEnabled: false, textTranslationsEnabled: false })
+    )
+
+    expect(result.current.textTranslationsEnabled).toBe(false)
+    expect(result.current.showTranslations).toBe(false)
+
+    act(() => {
+      result.current.toggleTranslationsVisibility()
+    })
+
+    expect(result.current.showTranslations).toBe(false)
   })
 })

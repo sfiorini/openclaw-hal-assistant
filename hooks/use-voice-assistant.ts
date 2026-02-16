@@ -16,13 +16,17 @@ interface UseVoiceAssistantReturn {
   response: string
   error: string
   toggleRecording: () => void
+  toggleTranslationsVisibility: () => void
   wakeWordEnabled: boolean
   wakeWordSupported: boolean
+  textTranslationsEnabled: boolean
+  showTranslations: boolean
 }
 
 interface UseVoiceAssistantOptions {
   wakeWordEnabled?: boolean
   wakeWord?: string
+  textTranslationsEnabled?: boolean
   wakeWordAccessKey?: string
   wakeWordModelPath?: string
   wakeWordKeywordPath?: string
@@ -35,6 +39,7 @@ const RECORDING_MIN_DURATION_MS = 800
 const RECORDING_SILENCE_WINDOW_MS = 2_400
 const RECORDING_VOICE_ACTIVITY_THRESHOLD = 0.012
 const OPENCLAW_SESSION_STORAGE_KEY = "openclaw_session_id"
+const OPENCLAW_TRANSLATION_VISIBILITY_STORAGE_KEY = "openclaw_show_translations"
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -186,10 +191,12 @@ export function useVoiceAssistant(
 
   const wakeWord = options.wakeWord?.trim() || "hey luke"
   const wakeWordEnabled = options.wakeWordEnabled ?? true
+  const textTranslationsEnabled = options.textTranslationsEnabled ?? true
   const wakeWordAccessKey = options.wakeWordAccessKey?.trim()
   const wakeWordModelPath = options.wakeWordModelPath?.trim()
   const wakeWordKeywordPath = options.wakeWordKeywordPath?.trim()
   const wakeWordSensitivity = options.wakeWordSensitivity
+  const [showTranslations, setShowTranslations] = useState(textTranslationsEnabled)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -206,6 +213,7 @@ export function useVoiceAssistant(
   const porcupineWakeEngineRef = useRef<PorcupineWakeEngine | null>(null)
   const porcupineWakeEngineInitRef = useRef<Promise<PorcupineWakeEngine | null> | null>(null)
   const wakeConfigWarningRef = useRef<string | null>(null)
+  const translationsPreferenceLoadedRef = useRef(false)
   const hasUserGestureRef = useRef(false)
   const wakeSuppressedRef = useRef(false)
   const stateRef = useRef(state)
@@ -329,6 +337,41 @@ export function useVoiceAssistant(
       window.localStorage.removeItem(OPENCLAW_SESSION_STORAGE_KEY)
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    if (!textTranslationsEnabled) {
+      setShowTranslations(false)
+      translationsPreferenceLoadedRef.current = true
+      return
+    }
+
+    const storedVisibility = window.localStorage.getItem(OPENCLAW_TRANSLATION_VISIBILITY_STORAGE_KEY)
+    setShowTranslations(storedVisibility !== "0")
+    translationsPreferenceLoadedRef.current = true
+  }, [textTranslationsEnabled])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    if (!translationsPreferenceLoadedRef.current) {
+      return
+    }
+
+    if (!textTranslationsEnabled) {
+      return
+    }
+
+    window.localStorage.setItem(
+      OPENCLAW_TRANSLATION_VISIBILITY_STORAGE_KEY,
+      showTranslations ? "1" : "0"
+    )
+  }, [showTranslations, textTranslationsEnabled])
 
   const stopPlayback = useCallback(() => {
     clearSpeakingTimeout()
@@ -735,6 +778,14 @@ export function useVoiceAssistant(
     // processing currently internal only
   }, [abortAndReset, startRecording, state, stopPlayback, stopRecording])
 
+  const toggleTranslationsVisibility = useCallback(() => {
+    if (!textTranslationsEnabled) {
+      return
+    }
+
+    setShowTranslations((current) => !current)
+  }, [textTranslationsEnabled])
+
   useEffect(() => {
     return () => {
       if (porcupineWakeEngineRef.current) {
@@ -762,7 +813,10 @@ export function useVoiceAssistant(
     response,
     error,
     toggleRecording,
+    toggleTranslationsVisibility,
     wakeWordEnabled,
     wakeWordSupported,
+    textTranslationsEnabled,
+    showTranslations,
   }
 }

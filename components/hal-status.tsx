@@ -10,6 +10,9 @@ interface HalStatusProps {
   error?: string
   wakeWordEnabled?: boolean
   wakeWordSupported?: boolean
+  textTranslationsEnabled?: boolean
+  showTranslations?: boolean
+  onToggleTranslations?: () => void
 }
 
 const stateLabels: Record<HalState, string> = {
@@ -35,7 +38,13 @@ export function HalStatus({
   error,
   wakeWordEnabled,
   wakeWordSupported,
+  textTranslationsEnabled,
+  showTranslations,
+  onToggleTranslations,
 }: HalStatusProps) {
+  const isTranslationsEnabled = textTranslationsEnabled !== false
+  const isTranslationsVisible = showTranslations !== false
+
   const fallbackMessage =
     wakeWordEnabled === false
       ? "Wake word disabled; manual mode is active."
@@ -73,6 +82,19 @@ export function HalStatus({
         </p>
       )}
 
+      {isTranslationsEnabled && (
+        <div className="shrink-0 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={onToggleTranslations}
+            aria-pressed={isTranslationsVisible}
+            className="font-mono text-[10px] tracking-[0.2em] uppercase rounded-md border border-border/80 bg-card/60 px-3 py-1.5 text-muted-foreground hover:text-foreground hover:border-hal-red/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-hal-red/50"
+          >
+            {isTranslationsVisible ? "Hide Text" : "Show Text"}
+          </button>
+        </div>
+      )}
+
       {/* Error message */}
       {error && (
         <div className="shrink-0 w-full rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:px-4 sm:py-3">
@@ -81,7 +103,7 @@ export function HalStatus({
       )}
 
       {/* Transcript */}
-      {(transcript || response) && (
+      {isTranslationsEnabled && isTranslationsVisible && (transcript || response) && (
         <div
           className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2"
           style={{ gridAutoRows: "minmax(0, 1fr)" }}

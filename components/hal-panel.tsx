@@ -7,6 +7,7 @@ import { useVoiceAssistant } from "@/hooks/use-voice-assistant"
 interface HalPanelProps {
   wakeWordEnabled: boolean
   wakeWord: string
+  textTranslationsEnabled: boolean
   wakeWordAccessKey?: string
   wakeWordModelPath?: string
   wakeWordKeywordPath?: string
@@ -16,6 +17,7 @@ interface HalPanelProps {
 export function HalPanel({
   wakeWordEnabled,
   wakeWord,
+  textTranslationsEnabled,
   wakeWordAccessKey,
   wakeWordModelPath,
   wakeWordKeywordPath,
@@ -27,10 +29,13 @@ export function HalPanel({
     response,
     error,
     toggleRecording,
+    toggleTranslationsVisibility,
     wakeWordSupported,
+    showTranslations,
   } = useVoiceAssistant({
     wakeWordEnabled,
     wakeWord,
+    textTranslationsEnabled,
     wakeWordAccessKey,
     wakeWordModelPath,
     wakeWordKeywordPath,
@@ -75,6 +80,9 @@ export function HalPanel({
             error={error}
             wakeWordEnabled={wakeWordEnabled}
             wakeWordSupported={wakeWordSupported}
+            textTranslationsEnabled={textTranslationsEnabled}
+            showTranslations={showTranslations}
+            onToggleTranslations={toggleTranslationsVisibility}
           />
         </div>
       </div>
