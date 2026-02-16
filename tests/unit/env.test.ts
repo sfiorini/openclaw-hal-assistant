@@ -5,7 +5,7 @@ import { getServerEnvConfig, validateEnv } from "../../lib/config/env"
 const requiredEnv = {
   ELEVENLABS_API_KEY: "eleven-key",
   ELEVENLABS_VOICE_ID: "voice-id",
-  OPENCLAW_GATEWAY_URL: "https://gateway.example.com",
+  OPENCLAW_GATEWAY_URL: "ws://gateway.example.com",
   OPENCLAW_GATEWAY_TOKEN: "gateway-token",
   NODE_ENV: "test",
 }
@@ -51,6 +51,16 @@ describe("getServerEnvConfig", () => {
         })
       )
     ).toThrow("OPENCLAW_GATEWAY_URL must be a valid URL")
+  })
+
+  it("throws when OPENCLAW_GATEWAY_URL is not websocket URL", () => {
+    expect(() =>
+      getServerEnvConfig(
+        createEnv({
+          OPENCLAW_GATEWAY_URL: "http://gateway.example.com",
+        })
+      )
+    ).toThrow("OPENCLAW_GATEWAY_URL must be a ws:// or wss:// URL")
   })
 })
 

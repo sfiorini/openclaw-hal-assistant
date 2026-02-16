@@ -1,14 +1,17 @@
-import { createHmac, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 
 import { createTimeoutError, isTimeoutError, withTimeout } from "../middleware/timeout"
 import {
+  gatewayAgentEventSchema,
+  gatewayChatCompleteEventSchema,
+  gatewayChatEventSchema,
+  gatewayChatSendRequestSchema,
+  gatewayChatTokenEventSchema,
   gatewayConnectChallengeSchema,
   gatewayConnectedEventSchema,
   gatewayErrorEventSchema,
   gatewayIncomingMessageSchema,
   gatewayResponseSchema,
-  gatewayChatTokenEventSchema,
-  gatewayChatCompleteEventSchema,
   gatewayOutgoingMessageSchema,
   type GatewayIncomingMessage,
   type GatewayOutgoingMessage,
@@ -36,27 +39,10 @@ const normalizeGatewaySocketUrl = (rawUrl: string) => {
   if (/^wss:\/\//i.test(trimmed) || /^ws:\/\//i.test(trimmed)) {
     return trimmed
   }
-  if (/^https:\/\//i.test(trimmed)) {
-    return `wss://${trimmed.slice(8)}`
-  }
-  if (/^http:\/\//i.test(trimmed)) {
-    return `ws://${trimmed.slice(7)}`
-  }
-  return `wss://${trimmed}`
+  throw new Error("OPENCLAW_GATEWAY_URL must use ws:// or wss://")
 }
 
 const randomId = () => randomBytes(12).toString("hex")
-
-const isChallengeAuthFailure = (code: string) => {
-  const normalized = code.toLowerCase()
-  return ["challenge_auth_failed", "challenge-invalid", "signature_mismatch", "auth_failed"].includes(
-    normalized
-  )
-}
-
-const formatSignedChallengeResponse = (challenge: string, token: string) => {
-  return createHmac("sha256", token).update(challenge).digest("base64url")
-}
 
 const parseIncomingMessage = (data: unknown): GatewayIncomingMessage => {
   if (typeof data !== "string") {
@@ -83,6 +69,74 @@ const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms)
   })
+
+const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : "Unknown error")
+
+const resolveGatewaySessionKey = (conversationId?: string) => {
+  if (!conversationId || !conversationId.trim()) {
+    return "agent:main:main"
+  }
+
+  const trimmed = conversationId.trim()
+  if (trimmed.startsWith("agent:")) {
+    return trimmed
+  }
+
+  return `agent:main:${trimmed}`
+}
+
+const extractChatText = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") {
+    return null
+  }
+
+  const message = (payload as { message?: unknown }).message
+  if (!message || typeof message !== "object") {
+    return null
+  }
+
+  const content = (message as { content?: unknown }).content
+  if (!Array.isArray(content)) {
+    return null
+  }
+
+  const text = content
+    .map((entry) =>
+      entry &&
+      typeof entry === "object" &&
+      typeof (entry as { text?: unknown }).text === "string"
+        ? (entry as { text: string }).text
+        : ""
+    )
+    .join("")
+    .trim()
+
+  return text.length ? text : null
+}
+
+const upsertPartialText = (
+  current: string,
+  delta: string | undefined,
+  fullText: string | undefined
+) => {
+  if (delta && delta.length) {
+    return `${current}${delta}`
+  }
+
+  if (!fullText || !fullText.length) {
+    return current
+  }
+
+  if (fullText.startsWith(current)) {
+    return fullText
+  }
+
+  if (current.endsWith(fullText)) {
+    return current
+  }
+
+  return `${current}${fullText}`
+}
 
 export const createDefaultGatewaySocketFactory = (url: string): ReturnType<GatewaySocketFactory> => {
   if (!isBrowserWebSocket()) {
@@ -155,14 +209,13 @@ const connectAndChat = async (
 ): Promise<GatewayChatResult> => {
   const connectRequestId = randomId()
   const chatRequestId = randomId()
+  const waitRequestId = randomId()
+  const sessionKey = resolveGatewaySessionKey(input.conversationId)
 
   const state = {
     connected: false,
-    challenge: null as string | null,
-    didChallengeRespondSigned: false,
+    runId: null as string | null,
     completeText: null as string | null,
-    conversationId: input.conversationId ?? "",
-    completePayloadConversationId: null as string | null,
     partialText: "",
     completeResolver: null as ((value: GatewayChatResult) => void) | null,
     completeRejector: null as ((error: unknown) => void) | null,
@@ -195,6 +248,12 @@ const connectAndChat = async (
     state.completeRejector?.(error)
   }
 
+  const buildResult = (): GatewayChatResult => ({
+    text: state.completeText || state.partialText,
+    conversationId: input.conversationId ?? sessionKey,
+    partialText: state.partialText,
+  })
+
   const onOpen = () => {
     if (!state.done) {
       state.openResolver?.()
@@ -223,17 +282,14 @@ const connectAndChat = async (
     )
   }
 
-  const respondToChallenge = (challenge: string, sign: boolean) => {
-    sendFrame(socket, {
-      id: randomId(),
-      type: "req",
-      method: "connect.respond",
-      params: {
-        response: sign
-          ? formatSignedChallengeResponse(challenge, input.gatewayToken)
-          : challenge,
-      },
-    })
+  const shouldTrackRunId = (runId: string | null | undefined) => {
+    if (!runId) {
+      return false
+    }
+    if (!state.runId) {
+      return true
+    }
+    return state.runId === runId
   }
 
   const handleMessage = (event: MessageEvent | Event) => {
@@ -244,9 +300,6 @@ const connectAndChat = async (
     const parsed = parseIncomingMessage((event as MessageEvent).data)
 
     if (gatewayConnectChallengeSchema.safeParse(parsed).success) {
-      const challengePayload = gatewayConnectChallengeSchema.parse(parsed)
-      state.challenge = challengePayload.payload.challenge
-      respondToChallenge(state.challenge, state.didChallengeRespondSigned)
       return
     }
 
@@ -257,43 +310,82 @@ const connectAndChat = async (
 
     if (gatewayChatTokenEventSchema.safeParse(parsed).success) {
       const tokenPayload = gatewayChatTokenEventSchema.parse(parsed)
-      state.partialText += tokenPayload.payload.token
+      state.partialText = upsertPartialText(state.partialText, tokenPayload.payload.token, undefined)
       return
     }
 
     if (gatewayChatCompleteEventSchema.safeParse(parsed).success) {
       const completePayload = gatewayChatCompleteEventSchema.parse(parsed)
-      state.completePayloadConversationId = completePayload.payload.conversationId
       state.completeText = completePayload.payload.text
-      finalize({
-        text: state.completeText || state.partialText,
-        conversationId: state.completePayloadConversationId || state.conversationId,
-        partialText: state.partialText,
-      })
+      finalize(buildResult())
+      return
+    }
+
+    if (gatewayAgentEventSchema.safeParse(parsed).success) {
+      const agentPayload = gatewayAgentEventSchema.parse(parsed)
+      if (!shouldTrackRunId(agentPayload.payload.runId)) {
+        return
+      }
+
+      if (!state.runId) {
+        state.runId = agentPayload.payload.runId
+      }
+
+      if (agentPayload.payload.stream === "assistant") {
+        const data = agentPayload.payload.data
+        const delta = typeof data?.delta === "string" ? data.delta : undefined
+        const text = typeof data?.text === "string" ? data.text : undefined
+        state.partialText = upsertPartialText(state.partialText, delta, text)
+        return
+      }
+
+      if (
+        agentPayload.payload.stream === "lifecycle" &&
+        agentPayload.payload.data &&
+        typeof agentPayload.payload.data === "object" &&
+        (agentPayload.payload.data as { phase?: unknown }).phase === "end"
+      ) {
+        if (!state.completeText && state.partialText.trim().length > 0) {
+          finalize(buildResult())
+        }
+        return
+      }
+
+      return
+    }
+
+    if (gatewayChatEventSchema.safeParse(parsed).success) {
+      const chatPayload = gatewayChatEventSchema.parse(parsed)
+      const runId = chatPayload.payload.runId
+      if (!shouldTrackRunId(runId)) {
+        return
+      }
+      if (!state.runId && runId) {
+        state.runId = runId
+      }
+
+      const extractedText = extractChatText(chatPayload.payload)
+      if (chatPayload.payload.state === "final") {
+        if (extractedText) {
+          state.completeText = extractedText
+        }
+        finalize(buildResult())
+        return
+      }
+
+      if (extractedText) {
+        state.partialText = upsertPartialText(state.partialText, undefined, extractedText)
+      }
       return
     }
 
     if (gatewayErrorEventSchema.safeParse(parsed).success) {
       const errorPayload = gatewayErrorEventSchema.parse(parsed)
-      if (
-        !state.didChallengeRespondSigned &&
-        state.challenge &&
-        isChallengeAuthFailure(errorPayload.payload.code)
-      ) {
-        state.didChallengeRespondSigned = true
-        respondToChallenge(state.challenge, true)
-        return
-      }
-
-      const code = errorPayload.payload.code
       rejectWith(
         new GatewayClientError(errorPayload.payload.message, {
-          code:
-            isChallengeAuthFailure(code) && state.didChallengeRespondSigned
-              ? "challenge_auth_failed"
-              : "protocol",
+          code: "protocol",
           details: {
-            code,
+            code: errorPayload.payload.code,
             details: errorPayload.payload.details,
           },
           partialText: state.partialText,
@@ -305,29 +397,78 @@ const connectAndChat = async (
 
     if (gatewayResponseSchema.safeParse(parsed).success) {
       const response = gatewayResponseSchema.parse(parsed)
-      if (response.id === connectRequestId && response.error) {
-        rejectWith(
-          new GatewayClientError(response.error.message, {
-            code: "protocol",
-            details: { code: response.error.code, details: response.error.details },
-            retryable: false,
-          })
-        )
-        return
-      }
-      if (response.id === connectRequestId && response.result) {
+      const ok = (response as { ok?: unknown }).ok
+      const error = response.error
+
+      if (response.id === connectRequestId) {
+        if (error || ok === false) {
+          rejectWith(
+            new GatewayClientError(error?.message || "Gateway connect failed", {
+              code: "protocol",
+              details: {
+                code: error?.code,
+                details: error?.details,
+              },
+              retryable: false,
+            })
+          )
+          return
+        }
+
         state.connected = true
         return
       }
-      if (response.id === chatRequestId && response.error) {
-        rejectWith(
-          new GatewayClientError(response.error.message, {
-            code: "upstream",
-            details: { code: response.error.code, details: response.error.details },
-            partialText: state.partialText,
+
+      if (response.id === chatRequestId) {
+        if (error || ok === false) {
+          rejectWith(
+            new GatewayClientError(error?.message || "Gateway chat request failed", {
+              code: "upstream",
+              details: { code: error?.code, details: error?.details },
+              partialText: state.partialText,
+              retryable: false,
+            })
+          )
+          return
+        }
+
+        const payload = (response as { payload?: unknown }).payload
+        const runId =
+          payload && typeof payload === "object" && typeof (payload as { runId?: unknown }).runId === "string"
+            ? (payload as { runId: string }).runId
+            : null
+
+        if (runId) {
+          state.runId = runId
+          sendFrame(socket, {
+            id: waitRequestId,
+            type: "req",
+            method: "agent.wait",
+            params: {
+              runId,
+            },
           })
-        )
+        }
         return
+      }
+
+      if (response.id === waitRequestId) {
+        if (error || ok === false) {
+          rejectWith(
+            new GatewayClientError(error?.message || "Gateway wait request failed", {
+              code: "upstream",
+              details: { code: error?.code, details: error?.details },
+              partialText: state.partialText,
+              retryable: false,
+            })
+          )
+          return
+        }
+
+        if ((state.completeText || state.partialText).trim().length > 0) {
+          finalize(buildResult())
+          return
+        }
       }
       return
     }
@@ -338,7 +479,12 @@ const connectAndChat = async (
     try {
       handleMessage(event as MessageEvent)
     } catch (error) {
-      rejectWith(error)
+      rejectWith(
+        new GatewayClientError(`Gateway protocol parse error: ${getErrorMessage(error)}`, {
+          code: "protocol",
+          retryable: false,
+        })
+      )
     }
   })
   socket.addEventListener("close", onClose)
@@ -357,31 +503,46 @@ const connectAndChat = async (
     type: "req",
     method: "connect",
     params: {
-      token: input.gatewayToken,
+      minProtocol: 3,
+      maxProtocol: 3,
+      client: {
+        id: "cli",
+        version: "1.0.0",
+        platform: "linux",
+        mode: "node",
+      },
+      role: "operator",
+      scopes: ["operator.read", "operator.write"],
+      caps: [],
+      commands: [],
+      permissions: {},
+      auth: {
+        token: input.gatewayToken,
+      },
+      locale: "en-US",
+      userAgent: "openclaw-hal-assistant/1.0.0",
       ...(input.deviceId ? { deviceId: input.deviceId } : {}),
     },
   })
 
   while (!state.connected) {
     if (state.done) {
-      throw new GatewayClientError("Gateway connection did not complete", {
-        code: "connection",
-        retryable: true,
-      })
+      return complete
     }
     await sleep(25)
   }
 
-  sendFrame(socket, {
+  sendFrame(socket, gatewayChatSendRequestSchema.parse({
     id: chatRequestId,
     type: "req",
     method: "chat.send",
     params: {
-      text: input.text,
-      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      sessionKey,
+      message: input.text,
+      idempotencyKey: randomId(),
       ...(input.metadata ? { metadata: input.metadata } : {}),
     },
-  })
+  }))
 
   return complete
 }
@@ -407,8 +568,8 @@ export const chatWithGateway = async (input: GatewayChatInput): Promise<GatewayC
           socketFactory,
           signal,
           execute: (socket) =>
-        connectAndChat(socket, {
-          gatewayToken: cfg.gatewayToken,
+            connectAndChat(socket, {
+              gatewayToken: cfg.gatewayToken,
               conversationId: cfg.conversationId,
               metadata: cfg.metadata,
               text: cfg.text,

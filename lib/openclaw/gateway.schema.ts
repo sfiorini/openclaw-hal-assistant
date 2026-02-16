@@ -5,7 +5,7 @@ const trimmedText = z.string().trim().min(1)
 const incomingFrameBase = z.object({
   id: trimmedText.optional(),
   type: z.union([z.literal("req"), z.literal("res"), z.literal("event")]),
-})
+}).passthrough()
 
 const outgoingFrameBase = z.object({
   id: trimmedText,
@@ -21,16 +21,35 @@ const responsePayloadSchema = z.object({
 export const gatewayConnectRequestSchema = outgoingFrameBase.extend({
   method: z.literal("connect"),
   params: z.object({
-    token: trimmedText,
+    minProtocol: z.number().int().min(1),
+    maxProtocol: z.number().int().min(1),
+    client: z.object({
+      id: trimmedText,
+      version: trimmedText,
+      platform: trimmedText,
+      mode: trimmedText,
+    }),
+    auth: z.object({
+      token: trimmedText,
+    }),
+    role: trimmedText.optional(),
+    scopes: z.array(trimmedText).optional(),
+    caps: z.array(trimmedText).optional(),
+    commands: z.array(trimmedText).optional(),
+    permissions: z.record(z.unknown()).optional(),
+    locale: trimmedText.optional(),
+    userAgent: trimmedText.optional(),
     deviceId: trimmedText.optional(),
-  }),
+  }).passthrough(),
 })
 
 export const gatewayConnectRespondSchema = outgoingFrameBase.extend({
   method: z.literal("connect.respond"),
   params: z.object({
-    response: trimmedText,
-  }),
+    response: trimmedText.optional(),
+    nonce: trimmedText.optional(),
+    signature: trimmedText.optional(),
+  }).passthrough(),
 })
 
 export const gatewayConnectedEventSchema = incomingFrameBase.extend({
@@ -48,18 +67,26 @@ export const gatewayConnectChallengeSchema = incomingFrameBase.extend({
   type: z.literal("event"),
   event: z.literal("connect.challenge"),
   payload: z.object({
-    challenge: trimmedText,
-    expiresAt: z.string().datetime().optional(),
-  }),
+    nonce: trimmedText,
+    ts: z.number().int().optional(),
+  }).passthrough(),
 })
 
 export const gatewayChatSendRequestSchema = outgoingFrameBase.extend({
   method: z.literal("chat.send"),
   params: z.object({
-    text: trimmedText,
-    conversationId: trimmedText.optional(),
+    sessionKey: trimmedText,
+    message: trimmedText,
+    idempotencyKey: trimmedText,
     metadata: z.record(z.unknown()).optional(),
-  }),
+  }).passthrough(),
+})
+
+export const gatewayAgentWaitRequestSchema = outgoingFrameBase.extend({
+  method: z.literal("agent.wait"),
+  params: z.object({
+    runId: trimmedText,
+  }).passthrough(),
 })
 
 export const gatewayChatTokenEventSchema = incomingFrameBase.extend({
@@ -76,8 +103,38 @@ export const gatewayChatCompleteEventSchema = incomingFrameBase.extend({
   event: z.literal("chat.complete"),
   payload: z.object({
     text: z.string(),
-    conversationId: trimmedText,
-  }),
+    conversationId: trimmedText.optional(),
+  }).passthrough(),
+})
+
+export const gatewayAgentEventSchema = incomingFrameBase.extend({
+  type: z.literal("event"),
+  event: z.literal("agent"),
+  payload: z.object({
+    runId: trimmedText,
+    stream: trimmedText.optional(),
+    data: z.record(z.unknown()).optional(),
+    sessionKey: trimmedText.optional(),
+  }).passthrough(),
+})
+
+export const gatewayChatEventSchema = incomingFrameBase.extend({
+  type: z.literal("event"),
+  event: z.literal("chat"),
+  payload: z.object({
+    runId: trimmedText.optional(),
+    state: trimmedText.optional(),
+    sessionKey: trimmedText.optional(),
+    message: z.object({
+      role: trimmedText.optional(),
+      content: z.array(
+        z.object({
+          type: trimmedText.optional(),
+          text: z.string().optional(),
+        }).passthrough()
+      ).optional(),
+    }).passthrough().optional(),
+  }).passthrough(),
 })
 
 export const gatewayErrorEventSchema = incomingFrameBase.extend({
@@ -90,10 +147,13 @@ export const gatewayResponseSchema = incomingFrameBase
   .omit({ type: true })
   .extend({
     type: z.literal("res"),
-    method: z.string().trim().min(1),
+    ok: z.boolean().optional(),
+    method: z.string().trim().min(1).optional(),
+    payload: z.unknown().optional(),
     result: z.unknown().optional(),
     error: responsePayloadSchema.optional(),
   })
+  .passthrough()
 
 export const gatewayUnknownIncomingMessageSchema = incomingFrameBase
   .extend({
@@ -105,6 +165,8 @@ export const gatewayUnknownIncomingMessageSchema = incomingFrameBase
 export const gatewayIncomingMessageSchema = z.union([
   gatewayConnectedEventSchema,
   gatewayConnectChallengeSchema,
+  gatewayAgentEventSchema,
+  gatewayChatEventSchema,
   gatewayChatTokenEventSchema,
   gatewayChatCompleteEventSchema,
   gatewayErrorEventSchema,
@@ -116,6 +178,7 @@ export const gatewayOutgoingMessageSchema = z.union([
   gatewayConnectRequestSchema,
   gatewayConnectRespondSchema,
   gatewayChatSendRequestSchema,
+  gatewayAgentWaitRequestSchema,
 ])
 
 export type GatewayConnectRequest = z.infer<typeof gatewayConnectRequestSchema>
@@ -123,8 +186,11 @@ export type GatewayConnectRespondRequest = z.infer<typeof gatewayConnectRespondS
 export type GatewayConnectedEvent = z.infer<typeof gatewayConnectedEventSchema>
 export type GatewayConnectChallengeEvent = z.infer<typeof gatewayConnectChallengeSchema>
 export type GatewayChatSendRequest = z.infer<typeof gatewayChatSendRequestSchema>
+export type GatewayAgentWaitRequest = z.infer<typeof gatewayAgentWaitRequestSchema>
 export type GatewayChatTokenEvent = z.infer<typeof gatewayChatTokenEventSchema>
 export type GatewayChatCompleteEvent = z.infer<typeof gatewayChatCompleteEventSchema>
+export type GatewayAgentEvent = z.infer<typeof gatewayAgentEventSchema>
+export type GatewayChatEvent = z.infer<typeof gatewayChatEventSchema>
 export type GatewayErrorEvent = z.infer<typeof gatewayErrorEventSchema>
 export type GatewayResponse = z.infer<typeof gatewayResponseSchema>
 export type GatewayIncomingMessage = z.infer<typeof gatewayIncomingMessageSchema>

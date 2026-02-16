@@ -68,6 +68,11 @@ const parseOptionalPositiveInt = (value: unknown) => {
   return parseNumber(value)
 }
 
+const websocketUrl = (value: string) => {
+  const trimmed = value.trim()
+  return trimmed.startsWith("ws://") || trimmed.startsWith("wss://")
+}
+
 const envSchema = z.object({
   ELEVENLABS_API_KEY: z
     .string({ required_error: "ELEVENLABS_API_KEY is required" })
@@ -80,7 +85,10 @@ const envSchema = z.object({
   OPENCLAW_GATEWAY_URL: z
     .string({ required_error: "OPENCLAW_GATEWAY_URL is required" })
     .trim()
-    .url("OPENCLAW_GATEWAY_URL must be a valid URL"),
+    .url("OPENCLAW_GATEWAY_URL must be a valid URL")
+    .refine(websocketUrl, {
+      message: "OPENCLAW_GATEWAY_URL must be a ws:// or wss:// URL",
+    }),
   OPENCLAW_GATEWAY_TOKEN: z
     .string({ required_error: "OPENCLAW_GATEWAY_TOKEN is required" })
     .trim()

@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto"
 import { describe, expect, it, vi } from "vitest"
 
 import { chatWithGateway } from "../../../lib/openclaw/gateway-client"
@@ -62,15 +61,12 @@ class MockGatewaySocketFactory {
   }
 }
 
-const getLastSentFrame = (socket: MockGatewaySocket, index: number) => {
+const getFrame = (socket: MockGatewaySocket, index: number) => {
   const raw = socket.sentMessages[index]
   return raw ? (JSON.parse(raw) as Record<string, unknown>) : null
 }
 
-const signChallenge = (challenge: string, token: string) =>
-  createHmac("sha256", token).update(challenge).digest("base64url")
-
-const waitForSocketFrame = async (
+const waitForFrame = async (
   factory: MockGatewaySocketFactory,
   socketIndex: number,
   frameIndex: number
@@ -80,170 +76,158 @@ const waitForSocketFrame = async (
     expect(factory.sockets[socketIndex].sentMessages.length).toBeGreaterThan(frameIndex)
   })
 
-  return getLastSentFrame(factory.sockets[socketIndex], frameIndex)
+  return getFrame(factory.sockets[socketIndex], frameIndex)
 }
 
 describe("gateway client", () => {
-  it("retries raw challenge response with signed response", async () => {
+  it("connects with protocol v3 and resolves from chat final event", async () => {
     const factory = new MockGatewaySocketFactory()
     const request = chatWithGateway({
-      gatewayUrl: "wss://gateway.example.com",
+      gatewayUrl: "ws://gateway.example.com",
       gatewayToken: "gateway-token",
+      conversationId: "11111111-1111-4111-8111-111111111111",
       text: "ping",
       socketFactory: factory.create,
       maxRetryAttempts: 1,
     })
 
-    const connectFrame = await waitForSocketFrame(factory, 0, 0)
+    const connectFrame = await waitForFrame(factory, 0, 0)
     const socket = factory.sockets[0]
-    expect(connectFrame?.method).toBe("connect")
     const connectId = String(connectFrame?.id)
 
-    socket.emitMessage({
-      type: "event",
-      id: connectId,
-      event: "connect.challenge",
-      payload: { challenge: "openclaw-challenge" },
-    })
-
-    const rawRespond = getLastSentFrame(socket, 1)
-    expect(rawRespond?.method).toBe("connect.respond")
-    expect(rawRespond?.params).toMatchObject({ response: "openclaw-challenge" })
+    expect(connectFrame?.method).toBe("connect")
+    expect((connectFrame?.params as Record<string, unknown>)?.minProtocol).toBe(3)
 
     socket.emitMessage({
-      type: "event",
+      type: "res",
       id: connectId,
-      event: "error",
-      payload: { code: "challenge_auth_failed", message: "challenge failed" },
+      ok: true,
+      payload: { protocol: 3 },
     })
 
-    const signedRespond = getLastSentFrame(socket, 2)
-    expect(signedRespond?.method).toBe("connect.respond")
-    expect((signedRespond?.params as Record<string, unknown>)?.response).toBe(
-      signChallenge("openclaw-challenge", "gateway-token")
+    const chatFrame = await waitForFrame(factory, 0, 1)
+    const chatId = String(chatFrame?.id)
+    expect(chatFrame?.method).toBe("chat.send")
+    expect((chatFrame?.params as Record<string, unknown>)?.sessionKey).toBe(
+      "agent:main:11111111-1111-4111-8111-111111111111"
     )
 
     socket.emitMessage({
-      type: "event",
-      id: connectId,
-      event: "connect.success",
-      payload: { sessionId: "session-1" },
+      type: "res",
+      id: chatId,
+      ok: true,
+      payload: { runId: "run-1", status: "started" },
     })
+
+    const waitFrame = await waitForFrame(factory, 0, 2)
+    expect(waitFrame?.method).toBe("agent.wait")
 
     socket.emitMessage({
       type: "event",
-      event: "chat.complete",
-      payload: { text: "pong", conversationId: "conversation-1" },
+      event: "chat",
+      payload: {
+        runId: "run-1",
+        state: "final",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "pong" }],
+        },
+      },
     })
 
     await expect(request).resolves.toMatchObject({
       text: "pong",
-      conversationId: "conversation-1",
+      conversationId: "11111111-1111-4111-8111-111111111111",
     })
   })
 
-  it("streams token events and resolves with final completion text", async () => {
+  it("returns protocol error when connect response is invalid", async () => {
     const factory = new MockGatewaySocketFactory()
     const request = chatWithGateway({
-      gatewayUrl: "wss://gateway.example.com",
+      gatewayUrl: "ws://gateway.example.com",
       gatewayToken: "gateway-token",
       text: "ping",
       socketFactory: factory.create,
       maxRetryAttempts: 1,
     })
 
-    const connectFrame = await waitForSocketFrame(factory, 0, 0)
+    const connectFrame = await waitForFrame(factory, 0, 0)
     const socket = factory.sockets[0]
     const connectId = String(connectFrame?.id)
 
     socket.emitMessage({
-      type: "event",
+      type: "res",
       id: connectId,
-      event: "connect.challenge",
-      payload: { challenge: "stream-challenge" },
+      ok: false,
+      error: { code: "INVALID_REQUEST", message: "bad connect payload" },
     })
-
-    socket.emitMessage({
-      type: "event",
-      id: connectId,
-      event: "connect.success",
-      payload: { sessionId: "session-2" },
-    })
-
-    socket.emitMessage({
-      type: "event",
-      event: "chat.token",
-      payload: { token: "Hell" },
-    })
-    socket.emitMessage({
-      type: "event",
-      event: "chat.token",
-      payload: { token: "o " },
-    })
-
-    socket.emitMessage({
-      type: "event",
-      event: "chat.complete",
-      payload: { text: "Hello!", conversationId: "conversation-2" },
-    })
-
-    await expect(request).resolves.toMatchObject({
-      text: "Hello!",
-      conversationId: "conversation-2",
-      partialText: "Hello ",
-    })
-  })
-
-  it("returns protocol error with partial text when an error is encountered mid-stream", async () => {
-    const factory = new MockGatewaySocketFactory()
-    const request = chatWithGateway({
-      gatewayUrl: "wss://gateway.example.com",
-      gatewayToken: "gateway-token",
-      text: "ping",
-      socketFactory: factory.create,
-      maxRetryAttempts: 1,
-    })
-
-    const connectFrame = await waitForSocketFrame(factory, 0, 0)
-    const socket = factory.sockets[0]
-    const connectId = String(connectFrame?.id)
-
-    socket.emitMessage({
-      type: "event",
-      id: connectId,
-      event: "connect.challenge",
-      payload: { challenge: "error-challenge" },
-    })
-    socket.emitMessage({
-      type: "event",
-      id: connectId,
-      event: "connect.success",
-      payload: { sessionId: "session-3" },
-    })
-    socket.emitMessage({
-      type: "event",
-      event: "chat.token",
-      payload: { token: "working" },
-    })
-    socket.emitMessage({
-      type: "event",
-      event: "error",
-      payload: { code: "tool_error", message: "Tool failed" },
-    })
-    await Promise.resolve()
 
     await expect(request).rejects.toMatchObject({
       name: "GatewayClientError",
       code: "protocol",
-      partialText: "working",
     })
-    socket.close()
   })
 
-  it("retries when stream closes during completion", async () => {
+  it("ignores events from unrelated runs", async () => {
     const factory = new MockGatewaySocketFactory()
     const request = chatWithGateway({
-      gatewayUrl: "wss://gateway.example.com",
+      gatewayUrl: "ws://gateway.example.com",
+      gatewayToken: "gateway-token",
+      text: "ping",
+      socketFactory: factory.create,
+      maxRetryAttempts: 1,
+    })
+
+    const connectFrame = await waitForFrame(factory, 0, 0)
+    const socket = factory.sockets[0]
+    const connectId = String(connectFrame?.id)
+
+    socket.emitMessage({
+      type: "res",
+      id: connectId,
+      ok: true,
+      payload: { protocol: 3 },
+    })
+
+    const chatFrame = await waitForFrame(factory, 0, 1)
+    const chatId = String(chatFrame?.id)
+
+    socket.emitMessage({
+      type: "res",
+      id: chatId,
+      ok: true,
+      payload: { runId: "run-target", status: "started" },
+    })
+
+    socket.emitMessage({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-other",
+        state: "final",
+        message: { role: "assistant", content: [{ type: "text", text: "ignore me" }] },
+      },
+    })
+
+    socket.emitMessage({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-target",
+        state: "final",
+        message: { role: "assistant", content: [{ type: "text", text: "use me" }] },
+      },
+    })
+
+    await expect(request).resolves.toMatchObject({
+      text: "use me",
+    })
+  })
+
+  it("retries when socket closes before completion", async () => {
+    const factory = new MockGatewaySocketFactory()
+    const request = chatWithGateway({
+      gatewayUrl: "ws://gateway.example.com",
       gatewayToken: "gateway-token",
       text: "ping",
       socketFactory: factory.create,
@@ -251,63 +235,61 @@ describe("gateway client", () => {
       reconnectDelaysMs: [0],
     })
 
-    const firstConnectFrame = await waitForSocketFrame(factory, 0, 0)
-    const first = factory.sockets[0]
-    const firstConnectId = String(firstConnectFrame?.id)
-    first.emitMessage({
-      type: "event",
+    const firstConnect = await waitForFrame(factory, 0, 0)
+    const firstSocket = factory.sockets[0]
+    const firstConnectId = String(firstConnect?.id)
+    firstSocket.emitMessage({
+      type: "res",
       id: firstConnectId,
-      event: "connect.challenge",
-      payload: { challenge: "retry-challenge" },
+      ok: true,
+      payload: { protocol: 3 },
     })
-    first.emitMessage({
-      type: "event",
-      id: firstConnectId,
-      event: "connect.success",
-      payload: { sessionId: "session-retry" },
+    const firstChat = await waitForFrame(factory, 0, 1)
+    const firstChatId = String(firstChat?.id)
+    firstSocket.emitMessage({
+      type: "res",
+      id: firstChatId,
+      ok: true,
+      payload: { runId: "run-1", status: "started" },
     })
-    first.emitMessage({
-      type: "event",
-      event: "chat.token",
-      payload: { token: "partial" },
-    })
-    first.close()
-    await Promise.resolve()
+    firstSocket.close()
 
-    await vi.waitFor(
-      () => {
-        expect(factory.sockets.length).toBeGreaterThan(1)
+    await vi.waitFor(() => {
+      expect(factory.sockets.length).toBe(2)
+    })
+
+    const secondSocket = factory.sockets[1]
+    const secondConnect = await waitForFrame(factory, 1, 0)
+    const secondConnectId = String(secondConnect?.id)
+    secondSocket.emitMessage({
+      type: "res",
+      id: secondConnectId,
+      ok: true,
+      payload: { protocol: 3 },
+    })
+    const secondChat = await waitForFrame(factory, 1, 1)
+    const secondChatId = String(secondChat?.id)
+    secondSocket.emitMessage({
+      type: "res",
+      id: secondChatId,
+      ok: true,
+      payload: { runId: "run-2", status: "started" },
+    })
+    secondSocket.emitMessage({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-2",
+        state: "final",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "recovered" }],
+        },
       },
-      {
-        timeout: 5000,
-      }
-    )
-    const second = factory.sockets[1]
-    const secondConnectFrame = await waitForSocketFrame(factory, 1, 0)
-    const secondConnectId = String(secondConnectFrame?.id)
-
-    second.emitMessage({
-      type: "event",
-      id: secondConnectId,
-      event: "connect.challenge",
-      payload: { challenge: "retry-challenge-2" },
-    })
-    second.emitMessage({
-      type: "event",
-      id: secondConnectId,
-      event: "connect.success",
-      payload: { sessionId: "session-retry-2" },
-    })
-    second.emitMessage({
-      type: "event",
-      event: "chat.complete",
-      payload: { text: "recovered", conversationId: "conversation-3" },
     })
 
     await expect(request).resolves.toMatchObject({
       text: "recovered",
-      conversationId: "conversation-3",
     })
-    expect(factory.sockets).toHaveLength(2)
   })
 })

@@ -11,7 +11,7 @@ const baseEnv = {
   OPENCLAW_API_DOCS_TOKEN: "docs-token",
   ELEVENLABS_API_KEY: "eleven-key",
   ELEVENLABS_VOICE_ID: "voice-id",
-  OPENCLAW_GATEWAY_URL: "https://gateway.example.com",
+  OPENCLAW_GATEWAY_URL: "ws://gateway.example.com",
   OPENCLAW_GATEWAY_TOKEN: "gateway-token",
 }
 

@@ -1,90 +1,108 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  gatewayChatCompleteEventSchema,
+  gatewayAgentEventSchema,
+  gatewayAgentWaitRequestSchema,
+  gatewayChatEventSchema,
   gatewayChatSendRequestSchema,
   gatewayConnectChallengeSchema,
   gatewayConnectRequestSchema,
-  gatewayConnectRespondSchema,
-  gatewayErrorEventSchema,
   gatewayIncomingMessageSchema,
   gatewayOutgoingMessageSchema,
 } from "../../../lib/openclaw/gateway.schema"
 
 describe("gateway schemas", () => {
-  it("validates connect request payload", () => {
+  it("validates protocol v3 connect payload", () => {
     const parsed = gatewayConnectRequestSchema.parse({
       id: "connect-1",
       type: "req",
       method: "connect",
       params: {
-        token: "gateway-token",
-        deviceId: "device-123",
+        minProtocol: 3,
+        maxProtocol: 3,
+        client: {
+          id: "cli",
+          version: "1.0.0",
+          platform: "linux",
+          mode: "node",
+        },
+        auth: {
+          token: "gateway-token",
+        },
       },
     })
 
-    expect(parsed.params.token).toBe("gateway-token")
-    expect(parsed.params.deviceId).toBe("device-123")
+    expect(parsed.params.minProtocol).toBe(3)
+    expect(parsed.params.client.id).toBe("cli")
   })
 
-  it("validates connect.challenge payload with optional expiry", () => {
+  it("validates connect.challenge payload", () => {
     const parsed = gatewayConnectChallengeSchema.parse({
-      id: "connect-1",
       type: "event",
       event: "connect.challenge",
       payload: {
-        challenge: "abc",
-        expiresAt: "2025-10-01T00:00:00.000Z",
+        nonce: "abc-123",
+        ts: 123456,
       },
     })
 
-    expect(parsed.event).toBe("connect.challenge")
+    expect(parsed.payload.nonce).toBe("abc-123")
   })
 
-  it("validates connect.respond payload", () => {
-    const parsed = gatewayConnectRespondSchema.parse({
-      id: "connect-2",
-      type: "req",
-      method: "connect.respond",
-      params: { response: "signed-token" },
-    })
-
-    expect(parsed.params.response).toBe("signed-token")
-  })
-
-  it("validates chat.send request and allows optional conversationId", () => {
+  it("validates chat.send payload", () => {
     const parsed = gatewayChatSendRequestSchema.parse({
       id: "chat-1",
       type: "req",
       method: "chat.send",
       params: {
-        text: "Say hello",
-        conversationId: "conv-1",
+        sessionKey: "agent:main:test",
+        message: "Say hello",
+        idempotencyKey: "idem-1",
       },
     })
 
-    expect(parsed.params.text).toBe("Say hello")
-    expect(parsed.params.conversationId).toBe("conv-1")
+    expect(parsed.params.message).toBe("Say hello")
+    expect(parsed.params.sessionKey).toBe("agent:main:test")
   })
 
-  it("validates chat.complete and protocol error frames", () => {
+  it("validates agent.wait payload", () => {
+    const parsed = gatewayAgentWaitRequestSchema.parse({
+      id: "wait-1",
+      type: "req",
+      method: "agent.wait",
+      params: { runId: "run-1" },
+    })
+
+    expect(parsed.params.runId).toBe("run-1")
+  })
+
+  it("validates agent and chat stream events", () => {
     expect(
-      gatewayChatCompleteEventSchema.parse({
-        id: "chat-2",
+      gatewayAgentEventSchema.parse({
         type: "event",
-        event: "chat.complete",
-        payload: { text: "Hi", conversationId: "conv-1" },
+        event: "agent",
+        payload: {
+          runId: "run-1",
+          stream: "assistant",
+          data: { delta: "Hi" },
+        },
       })
-    ).toMatchObject({ payload: { text: "Hi" } })
+    ).toBeDefined()
 
     expect(
-      gatewayErrorEventSchema.parse({
-        id: "chat-2",
+      gatewayChatEventSchema.parse({
         type: "event",
-        event: "error",
-        payload: { code: "protocol", message: "failed" },
+        event: "chat",
+        payload: {
+          runId: "run-1",
+          state: "final",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "Hi" }],
+          },
+        },
       })
-    ).toMatchObject({ event: "error" })
+    ).toBeDefined()
   })
 
   it("falls back to generic incoming message parsing for unknown event type", () => {

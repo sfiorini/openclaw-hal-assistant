@@ -144,41 +144,63 @@ const extractWakeText = (results: ArrayLike<WakeWordResult> | undefined, wakeWor
 }
 
 const readApiErrorMessage = async (response: Response, fallbackMessage: string) => {
-  const contentType = response.headers.get("content-type") || ""
-  if (contentType.includes("application/json")) {
-    try {
+  const statusSuffix = `(${response.status} ${response.statusText || "Error"})`
+
+  try {
+    const contentType = response.headers.get("content-type") || ""
+    if (contentType.includes("application/json")) {
       const payload = await response.json()
       if (payload && typeof payload === "object") {
         if (typeof payload.error === "string") {
-          return payload.error
+          return `${payload.error} ${statusSuffix}`
         }
         if (typeof (payload as { message?: unknown }).message === "string") {
-          return (payload as { message: string }).message
+          return `${(payload as { message: string }).message} ${statusSuffix}`
+        }
+        if (Array.isArray((payload as { details?: unknown }).details)) {
+          const details = (payload as { details: Array<{ path?: unknown; message?: unknown }> }).details
+          const text = details
+            .map((detail) => {
+              const path = typeof detail?.path === "string" ? detail.path : undefined
+              const message = typeof detail?.message === "string" ? detail.message : undefined
+              if (!path && !message) {
+                return ""
+              }
+              return `${path || "error"}: ${message || "invalid value"}`
+            })
+            .filter(Boolean)
+            .join("; ")
+
+          if (text) {
+            return `Invalid request: ${text} ${statusSuffix}`
+          }
         }
         if (
           typeof (payload as { upstream?: unknown }).upstream === "object" &&
           (payload as { upstream: { message?: unknown } }).upstream?.message &&
           typeof (payload as { upstream: { message: unknown } }).upstream.message === "string"
         ) {
-          return `${(payload as { upstream: { message: string } }).upstream.message} (${response.status})`
+          return `${(payload as { upstream: { message: string } }).upstream.message} ${statusSuffix}`
         }
       }
-    } catch {
-      // fall through
     }
+  } catch {
+    // fall through to text body parsing
   }
 
   try {
     const body = await response.text()
     if (body.trim()) {
-      return `${body.trim()} (${response.status})`
+      return `${body.trim()} ${statusSuffix}`
     }
   } catch {
     // no-op
   }
 
-  return `${fallbackMessage} (${response.status})`
+  return `${fallbackMessage} ${statusSuffix}`
 }
+
+const CHAT_HISTORY_PAYLOAD_LIMIT = 20
 
 export function useVoiceAssistant(
   options: UseVoiceAssistantOptions = {}
@@ -323,7 +345,7 @@ export function useVoiceAssistant(
           body: JSON.stringify({
             message: userText,
             ...(sessionId ? { sessionId } : {}),
-            conversationHistory: conversationHistoryRef.current,
+            conversationHistory: conversationHistoryRef.current.slice(-CHAT_HISTORY_PAYLOAD_LIMIT),
           }),
           signal: requestController.signal,
         })
